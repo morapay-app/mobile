@@ -1,0 +1,7 @@
+allowBuilds:
+  bigint-buffer: true
+  bufferutil: true
+  protobufjs: true
+  react-native-inappbrowser-reborn: true
+  sharp: true
+  utf-8-validate: true

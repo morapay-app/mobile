@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mobile-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd '/Users/kaleel/Documents/projects/startups/morapay/mobile' && pnpm exec expo start --web"
+      ],
+      "port": 8081
+    }
+  ]
+}
