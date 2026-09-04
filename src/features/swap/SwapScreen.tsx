@@ -39,6 +39,7 @@ import { useSwapTokens } from './useSwapTokens';
 import { useWalletBalance } from './useWalletBalance';
 import { useEnsResolution } from './useEnsResolution';
 import { contactSendBlockedReason, useContactSend } from './useContactSend';
+import { useDebouncedValue } from './useDebouncedValue';
 import { ContactSendResultSheet } from './components/ContactSendResultSheet';
 import { swapAndForwardBlockedReason, useSwapAndForward } from './useSwapAndForward';
 import { coreChainCode } from './coreChain';
@@ -834,6 +835,13 @@ export function SwapScreen() {
     detectedDestination?.kind === 'evm' || detectedDestination?.kind === 'bitcoin' || detectedDestination?.kind === 'solana';
   const isAddressKind = isLiteralAddressKind || (isEnsKind && Boolean(ens.address));
   const isContactKind = detectedDestination?.kind === 'phone' || detectedDestination?.kind === 'email';
+  // Holds off showing the CountrySelect prefix until the typed value has
+  // settled for a moment — without this it pops in (and can re-guess the
+  // country) on every single keystroke once the digit count crosses the
+  // phone-shape threshold, which reads as flicker rather than a confident
+  // detection. Only gates when it APPEARS; it still disappears immediately
+  // once the value stops looking like a phone number (see the render site).
+  const showCountrySelect = useDebouncedValue(detectedDestination?.kind === 'phone', 350);
   // Whether a send-to-contact is even possible for the current "from" token
   // — see useContactSend's own doc. Checked here (not just inside
   // runContactSend) so the button itself can go straight to a disabled
@@ -1347,9 +1355,9 @@ export function SwapScreen() {
                         trees here would unmount and remount the input the moment a
                         phone number gets detected mid-typing, dropping focus. */}
                     <View style={styles.destinationRow}>
-                      {detectedDestination?.kind === 'phone' && (
+                      {showCountrySelect && detectedDestination?.kind === 'phone' && (
                         <CountrySelect
-                          countryCode={countryOverride ?? detectedDestination.countryCode ?? '233'}
+                          countryCode={countryOverride ?? detectedDestination.countryCode ?? null}
                           onPress={() => setCountrySheetOpen(true)}
                         />
                       )}

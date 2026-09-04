@@ -89,7 +89,16 @@ function detectPhone(raw: string, digits: string): DetectedDestination | null {
   // back to a bare "Phone Number" guess.
   const network = detectMomoNetwork(raw);
   if (network) return { kind: 'phone', label: `${network} · Ghana`, countryCode: '233' };
-  return digits.length >= 9 ? { kind: 'phone', label: 'Phone Number' } : null;
+  // No fixed "must be exactly N digits" here — real local-number lengths
+  // vary by country (8 in some numbering plans, 9 in Ghana/Kenya/Uganda,
+  // 10 in Nigeria/the US/the UK, and so on), and this classifier doesn't
+  // know the country yet. 8 is just a floor low enough not to reject a
+  // real short-format number while still being long enough that it isn't
+  // matching an address fragment or amount by accident; the caller is
+  // still expected to confirm/correct the actual country via CountrySelect
+  // before this is treated as a real payable destination (see
+  // `countryCode` being left unset below — deliberately not guessed).
+  return digits.length >= 8 ? { kind: 'phone', label: 'Phone Number' } : null;
 }
 
 /** Re-derives the phone label for a country the user picked explicitly via
@@ -126,9 +135,13 @@ export function toE164Phone(rawValue: string, countryCode?: string): string {
   if (rawValue.trim().startsWith('+')) return `+${digits}`;
   if (!countryCode) return digits;
   const withoutCode = digits.startsWith(countryCode) ? digits.slice(countryCode.length) : digits;
-  // A leading trunk '0' is a domestic-dialling prefix, never part of the
-  // subscriber number once a country code is attached.
-  return `+${countryCode}${withoutCode.replace(/^0+/, '')}`;
+  // Strip at most one leading '0' — that's the domestic trunk-dialling
+  // prefix real numbering plans use (never repeated), not part of the
+  // subscriber number once a country code is attached. Only stripping one
+  // (not `/^0+/`) matters for the countries whose numbers don't carry a
+  // trunk prefix at all, where a leading 0 could legitimately be the
+  // subscriber number's own first digit.
+  return `+${countryCode}${withoutCode.replace(/^0/, '')}`;
 }
 
 export function detectDestination(rawValue: string): DetectedDestination | null {

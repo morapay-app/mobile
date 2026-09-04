@@ -864,7 +864,10 @@ describe('SwapScreen', () => {
       await goToSendTab();
       await fireEvent.changeText(screen.getByTestId('destination-input'), '0241234567');
 
-      const select = screen.getByTestId('country-select');
+      // The chip is intentionally debounced (see useDebouncedValue's use in
+      // SwapScreen.tsx) so it doesn't pop in on every keystroke — wait for
+      // it to settle before asserting on it.
+      const select = await waitFor(() => screen.getByTestId('country-select'));
       expect(select.props.accessibilityLabel).toBe('Country, currently Ghana');
 
       await fireEvent.press(select);

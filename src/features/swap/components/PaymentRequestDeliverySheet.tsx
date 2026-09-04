@@ -8,6 +8,7 @@ import { CountrySelect } from './CountrySelect';
 import { CountrySelectSheet } from './CountrySelectSheet';
 import { SheetShell } from './SheetShell';
 import { describePhoneForCountry, detectDestination, toE164Phone } from '../destinationDetect';
+import { useDebouncedValue } from '../useDebouncedValue';
 
 export type DeliveryChannel = 'email' | 'phone';
 
@@ -50,6 +51,9 @@ export function PaymentRequestDeliverySheet({
 
   const detected = detectDestination(contact);
   const isPhone = detected?.kind === 'phone';
+  // Same "wait for it to settle" reasoning as SwapScreen's own destination
+  // field — see useDebouncedValue's doc there.
+  const showCountrySelect = useDebouncedValue(isPhone, 350);
   const isEmail = detected?.kind === 'email';
   const isRecognized = isPhone || isEmail;
   const hasRequester = requesterIdentifier.trim().length > 0;
@@ -90,8 +94,8 @@ export function PaymentRequestDeliverySheet({
           <Text style={styles.fieldLabel}>Their contact</Text>
           <View style={[styles.row, styles.inputRow]}>
             <IdCard size={16} color={swapColors.textMuted} />
-            {isPhone && (
-              <CountrySelect countryCode={countryOverride ?? detected.countryCode ?? '233'} onPress={() => setCountrySheetOpen(true)} />
+            {showCountrySelect && isPhone && (
+              <CountrySelect countryCode={countryOverride ?? detected.countryCode ?? null} onPress={() => setCountrySheetOpen(true)} />
             )}
             <TextInput
               testID="delivery-contact-input"

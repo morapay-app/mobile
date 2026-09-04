@@ -29,3 +29,13 @@ const VIEM_CHAINS: Record<string, Chain> = {
 export function viemChainForId(chainId: string): Chain | null {
   return VIEM_CHAINS[chainId.trim()] ?? null;
 }
+
+/**
+ * The exact EVM chains this app supports, as a list — used to build
+ * Dynamic's `settings.overrides.evmNetworks` (see DynamicRoot.web.tsx) so
+ * the wallet-connect network switcher matches what the app can actually
+ * do, instead of whatever's configured on the Dynamic dashboard for this
+ * environment (which is a near-empty "Ethereum + some testnets" default,
+ * unrelated to this catalog).
+ */
+export const SUPPORTED_EVM_CHAINS: readonly Chain[] = Object.values(VIEM_CHAINS);
