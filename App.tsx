@@ -41,6 +41,15 @@ SplashScreen.preventAutoHideAsync();
  * scrim and whose bottom is its own light body) — it's just this
  * container's own children rendering correctly, per pixel.
  */
+// This is a phone-shaped UI (fixed breakpoints up to ~744pt in
+// SwapScreen.tsx, sheets that slide up from a screen-width bottom edge,
+// etc.) — full-bleed on a real desktop browser window stretches every card,
+// pill, and sheet to widths none of that layout logic was ever tuned for.
+// Capping the CONTENT at a phone-ish column and letting only the
+// background go full-bleed keeps the design intentional at any window
+// width instead of just accidentally wide.
+const WEB_CONTENT_MAX_WIDTH = 480;
+
 function AppRoot({ children, onLayout }: { children: ReactNode; onLayout?: () => void }) {
   const viewportHeight = useViewportHeight();
   const insets = useSafeAreaInsets();
@@ -48,7 +57,11 @@ function AppRoot({ children, onLayout }: { children: ReactNode; onLayout?: () =>
 
   return (
     <View style={[{ flex: 1, backgroundColor: swapColors.hero }, height !== undefined && { height }]} onLayout={onLayout}>
-      {children}
+      {Platform.OS === 'web' ? (
+        <View style={{ flex: 1, width: '100%', maxWidth: WEB_CONTENT_MAX_WIDTH, alignSelf: 'center' }}>{children}</View>
+      ) : (
+        children
+      )}
     </View>
   );
 }
