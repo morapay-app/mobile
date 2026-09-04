@@ -176,16 +176,6 @@ const COMPACT_BREAKPOINT = 600;
 const HERO_MARGIN = 20;
 const HERO_MARGIN_COMPACT = 10;
 
-// The "Sell"/amount card's real rendered height (label + AmountRow + its
-// secondary line + the card's own padding) is effectively constant across
-// breakpoints — `amountBlockCompact` only re-asserts the same vertical
-// padding the base style already has. The destination card, by contrast,
-// naturally shrinks once its input drops to one line for short content
-// (phone/email) — this floor keeps it from ever reading as visually
-// shorter than the amount card above it, which would make the two stacked
-// Send-tab cards look inconsistent. Measured directly against the live
-// amount card; re-tune if that card's own content ever changes.
-const DESTINATION_CARD_MIN_HEIGHT = 146;
 
 // Satisfies Core's non-empty, "@"-shaped `payer_email` requirement for a
 // send-to-contact (see useContactSend's own doc) without asking the sender
@@ -855,6 +845,20 @@ export function SwapScreen() {
   // enabled and doing nothing when pressed.
   const isUnrecognizedDestination = recipient.trim().length > 0 && !detectedDestination;
 
+  // Real, useful copy for the gaps the badge/token-pill/blocked-caption
+  // below don't cover — see destinationSubcard's own doc for why this
+  // exists at all (replaces a fixed `minHeight` that just left blank space
+  // in exactly these states). `null` whenever one of those three already
+  // has something to say, so nothing ever renders twice.
+  const sendDestinationHint =
+    isContactKind && !contactSendBlocked
+      ? `We'll ${detectedDestination?.kind === 'phone' ? 'text' : 'email'} them a claim code once this clears.`
+      : recipient.trim().length === 0
+        ? "We'll detect the network automatically from an address, ENS name, phone number, or email."
+        : isUnrecognizedDestination
+          ? "We don't recognize this as an address, ENS name, phone number, or email."
+          : null;
+
   // If the user picked a different country than what was auto-detected,
   // that choice should actually change the label shown, not just the chip.
   // For an ENS name the label reports the live lookup instead of a static
@@ -1414,6 +1418,11 @@ export function SwapScreen() {
                         {contactSendBlocked}
                       </Text>
                     )}
+                    {sendDestinationHint && (
+                      <Text testID="send-destination-hint" style={styles.contactSendBlockedCaption}>
+                        {sendDestinationHint}
+                      </Text>
+                    )}
                   </View>
                 )}
                 {/* Receive mode: the requester fills in only what they're
@@ -1728,12 +1737,13 @@ const styles = StyleSheet.create({
   // to out-rank that button for the dropdown to actually paint above it.
   destinationSubcard: {
     zIndex: 15,
-    // Never lets the card read as shorter than the "Sell"/amount card
-    // above it — see DESTINATION_CARD_MIN_HEIGHT's own comment. Only
-    // actually kicks in for short content (phone/email/a truncated
-    // address that fits on one line); a genuinely two-line address is
-    // already taller than this on its own.
-    minHeight: DESTINATION_CARD_MIN_HEIGHT,
+    // Height parity with the "Sell"/amount card above used to come from a
+    // fixed `minHeight` guess, which just left blank space below the input
+    // for whichever destination state didn't happen to render a badge/pill/
+    // caption. Now it comes from always having a real second line instead
+    // (see `sendDestinationHint`'s own doc) — same "label + two content
+    // rows" shape the amount card has, so the two cards match naturally
+    // rather than by a magic number.
   },
   destinationRow: {
     flexDirection: 'row',

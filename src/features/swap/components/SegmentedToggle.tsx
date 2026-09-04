@@ -102,7 +102,15 @@ const styles = StyleSheet.create({
   },
   trackCompact: {
     marginHorizontal: 0,
-    height: 40,
+    // Matches "Sell"'s own single-line text height (subcardLabel: 15px
+    // InstrumentSans) instead of a touch-target-sized 40 — this toggle
+    // replaces that plain label in the same row of the same card (see
+    // SwapScreen.tsx), so it needs to sit at the same baseline/height as
+    // the label it's standing in for, or the amount block reads a
+    // different height on the Send tab than the Swap tab. The comfortable
+    // tap area still exists (see the Pressable's own `hitSlop`), it's just
+    // not the same thing as this box's visible height anymore.
+    height: 22,
     // No inset — the base track's `padding: 4` exists to keep its pill
     // background from touching the thumb's edges, but a transparent track
     // has no background to inset from, and any padding here would push the
@@ -166,7 +174,13 @@ const styles = StyleSheet.create({
     fontFamily: swapFonts.headingSemiBold,
     fontSize: 16,
   },
+  // Matches SwapScreen.tsx's `subcardLabel` exactly (font family + size) —
+  // this toggle sits in the exact same slot that a plain "Sell" label
+  // occupies on the Swap tab (same `amountBlock`, same row), so using a
+  // different family/size there was what made the Send tab's amount card
+  // read as a different height/weight than the Swap tab's.
   labelCompact: {
-    fontSize: 13,
+    fontFamily: swapFonts.label,
+    fontSize: 15,
   },
 });
