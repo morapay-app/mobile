@@ -7,7 +7,7 @@ import { SheetShell } from '../swap/components/SheetShell';
 import { useTransactionStore } from './TransactionStoreContext';
 import { useNow } from './useNow';
 import { TransactionStepper } from './TransactionStepper';
-import { TERMINAL_STATUSES, type SwapTransaction } from './types';
+import { TERMINAL_STATUSES, transactionPaySymbol, transactionReceiveSymbol, type SwapTransaction } from './types';
 
 const RECENT_LIMIT = 5;
 
@@ -29,11 +29,16 @@ function TransactionCard({ transaction, now }: { transaction: SwapTransaction; n
     <View testID={`transaction-card-${transaction.id}`} style={styles.card}>
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>
-          {formatTxAmount(transaction.amount)} {transaction.cryptoType} → {transaction.fiatType}
+          {formatTxAmount(transaction.amount)} {transactionPaySymbol(transaction)} → {transactionReceiveSymbol(transaction)}
         </Text>
         <Text style={styles.cardEta}>{formatCountdown(remainingMs)}</Text>
       </View>
-      <TransactionStepper status={transaction.status} fiatType={transaction.fiatType} />
+      <TransactionStepper
+        status={transaction.status}
+        fiatType={transaction.fiatType}
+        cryptoType={transaction.cryptoType}
+        direction={transaction.direction}
+      />
     </View>
   );
 }
@@ -47,7 +52,7 @@ function RecentRow({ transaction }: { transaction: SwapTransaction }) {
       </View>
       <View style={styles.recentInfo}>
         <Text style={styles.recentTitle}>
-          {formatTxAmount(transaction.amount)} {transaction.cryptoType} → {transaction.fiatType}
+          {formatTxAmount(transaction.amount)} {transactionPaySymbol(transaction)} → {transactionReceiveSymbol(transaction)}
         </Text>
         <Text style={styles.recentSubtitle}>{failed ? (transaction.failureReason ?? 'Failed') : 'Completed'}</Text>
       </View>

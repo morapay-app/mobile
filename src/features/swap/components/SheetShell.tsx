@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { swapColors, swapFonts, swapRadii } from '../theme';
 
@@ -47,6 +48,20 @@ export type SheetShellProps = {
 export function SheetShell({ visible, onClose, title, subtitle, testID, centerHeader, children }: SheetShellProps) {
   const translateY = useRef(new Animated.Value(OFFSCREEN_OFFSET)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  // The home-indicator inset — 0 on any device/browser without one, or
+  // without `viewport-fit=cover` in public/index.html to unlock it. Added
+  // on top of the sheet's own bottom padding, not instead of it, so content
+  // doesn't sit flush against the inset's edge either.
+  //
+  // No `useSheetThemeColor` call here (unlike ReceiptModal, which is one
+  // uniform full-screen color): this sheet's top (the dark backdrop) and
+  // bottom (its own cream `subcard`) are two different real colors, and
+  // there's no such thing as a single flat "theme color" that's correct
+  // for both. `App.tsx`'s `AppRoot` sizing the app to the TRUE full screen
+  // height (insets included) is what actually gets this right — the
+  // backdrop and this sheet just paint their own real edges directly, so
+  // there's nothing left for a hardcoded override to get wrong.
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) {
@@ -95,7 +110,10 @@ export function SheetShell({ visible, onClose, title, subtitle, testID, centerHe
         />
       </Animated.View>
 
-      <Animated.View testID={testID} style={[styles.sheet, { transform: [{ translateY }] }]}>
+      <Animated.View
+        testID={testID}
+        style={[styles.sheet, { paddingBottom: 24 + insets.bottom }, { transform: [{ translateY }] }]}
+      >
         <View {...panResponder.panHandlers} style={styles.handleArea}>
           <View style={styles.handle} />
         </View>
@@ -129,7 +147,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: swapRadii.card,
     borderTopRightRadius: swapRadii.card,
     overflow: 'hidden',
-    paddingBottom: 24,
   },
   handleArea: {
     alignItems: 'center',

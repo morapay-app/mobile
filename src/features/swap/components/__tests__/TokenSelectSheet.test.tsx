@@ -1,21 +1,35 @@
 import { act, render, screen, fireEvent } from '@testing-library/react-native';
 import { Dimensions } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import type { ComponentProps } from 'react';
 
 import { TokenSelectSheet } from '../TokenSelectSheet';
 import { BOOTSTRAP_TOKENS } from '../../data/tokens';
 
+// TokenSelectSheet now reads `useSafeAreaInsets()` (for the home-indicator
+// inset — see AGENTS.md's edge-to-edge UI requirement), which throws
+// without a `SafeAreaProvider` ancestor.
+const testMetrics = {
+  frame: { x: 0, y: 0, width: 375, height: 812 },
+  insets: { top: 0, left: 0, right: 0, bottom: 0 },
+};
+
+function renderSheet(props: ComponentProps<typeof TokenSelectSheet>) {
+  return render(
+    <SafeAreaProvider initialMetrics={testMetrics}>
+      <TokenSelectSheet {...props} />
+    </SafeAreaProvider>,
+  );
+}
+
 describe('TokenSelectSheet', () => {
   it('renders nothing when not visible', async () => {
-    await render(
-      <TokenSelectSheet visible={false} tokens={BOOTSTRAP_TOKENS} onClose={() => {}} onSelect={() => {}} />,
-    );
+    await renderSheet({ visible: false, tokens: BOOTSTRAP_TOKENS, onClose: () => {}, onSelect: () => {} });
     expect(screen.queryByTestId('token-row-skeleton')).toBeNull();
   });
 
   it('shows skeleton rows below whatever bootstrap tokens are already loaded while the live catalog is still fetching', async () => {
-    await render(
-      <TokenSelectSheet visible tokens={BOOTSTRAP_TOKENS} loading onClose={() => {}} onSelect={() => {}} />,
-    );
+    await renderSheet({ visible: true, tokens: BOOTSTRAP_TOKENS, loading: true, onClose: () => {}, onSelect: () => {} });
 
     // The bootstrap set itself renders as real rows immediately...
     expect(screen.getByTestId(`token-row-${BOOTSTRAP_TOKENS[0].id}`)).toBeTruthy();
@@ -25,9 +39,7 @@ describe('TokenSelectSheet', () => {
   });
 
   it('shows no skeleton once the catalog has finished loading', async () => {
-    await render(
-      <TokenSelectSheet visible tokens={BOOTSTRAP_TOKENS} loading={false} onClose={() => {}} onSelect={() => {}} />,
-    );
+    await renderSheet({ visible: true, tokens: BOOTSTRAP_TOKENS, loading: false, onClose: () => {}, onSelect: () => {} });
     expect(screen.queryByTestId('token-row-skeleton')).toBeNull();
   });
 
@@ -41,9 +53,7 @@ describe('TokenSelectSheet', () => {
   it('keeps the typed search query across a window-dimensions change while already open', async () => {
     const original = Dimensions.get('window');
 
-    await render(
-      <TokenSelectSheet visible tokens={BOOTSTRAP_TOKENS} onClose={() => {}} onSelect={() => {}} />,
-    );
+    await renderSheet({ visible: true, tokens: BOOTSTRAP_TOKENS, onClose: () => {}, onSelect: () => {} });
 
     await fireEvent.changeText(screen.getByTestId('token-search-input'), 'usdc');
     expect(screen.getByTestId('token-search-input').props.value).toBe('usdc');

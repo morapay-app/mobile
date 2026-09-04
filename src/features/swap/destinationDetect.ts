@@ -57,7 +57,10 @@ const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const BITCOIN_LEGACY_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
 const BITCOIN_BECH32_RE = /^(bc1|tb1)[a-z0-9]{25,90}$/i;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Exported: also used to validate the sender's own email for a contact
+// send (see SwapScreen.tsx's `runContactSend`) — same shape check, no
+// reason to duplicate the pattern.
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_SHAPE_RE = /^[+\d][\d\s-]*$/;
 // Deliberately `.eth` only, not "any dotted name": that's the namespace the
 // backend's own resolver (`/api/ens/address`, viem `getEnsAddress`) is
@@ -132,7 +135,7 @@ export function detectDestination(rawValue: string): DetectedDestination | null 
   const value = rawValue.trim();
   if (!value) return null;
 
-  if (EMAIL_RE.test(value)) return { kind: 'email', label: 'Email — redeemable once claimed' };
+  if (EMAIL_RE.test(value)) return { kind: 'email', label: 'Email (redeemable once claimed)' };
   if (EVM_ADDRESS_RE.test(value)) return { kind: 'evm', label: 'Ethereum, Base & other EVM chains' };
   // Before the base58/phone fallbacks, and after the address checks (an ENS
   // name can't collide with either) — the label stays neutral about whether

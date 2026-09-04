@@ -1,6 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Text } from 'react-native';
 
 // Minimal reactive stand-in for the real wallet state — the actual SDK's
 // connect/disconnect UI lives inside dynamicClient.reactNative.WebView, a
@@ -163,13 +166,13 @@ jest.mock('../useContactSend', () => ({
   contactSendBlockedReason: (token: { type: string; address: string; chainId: string; symbol: string; chainName: string }) => {
     const EVM_CHAIN_IDS = new Set(['1', '8453', '56', '137', '42161', '10', '43114']);
     if (token.type !== 'crypto') {
-      return "Paying with mobile money to a phone number or email isn't available yet — send to a wallet address instead.";
+      return 'Coming soon. Pick a crypto token to send to a phone number or email.';
     }
     if (token.address === 'native') {
-      return `Sending ${token.symbol} to a phone number or email isn't supported yet — try a token like USDC.`;
+      return `Can't send ${token.symbol} that way yet. Try a token like USDC.`;
     }
     if (!EVM_CHAIN_IDS.has(token.chainId)) {
-      return `Sending from ${token.chainName} to a phone number or email isn't supported yet.`;
+      return `${token.chainName} isn't supported for this yet.`;
     }
     return null;
   },
@@ -184,10 +187,10 @@ jest.mock('../useSwapAndForward', () => ({
     toToken: { chainId: string; address: string; symbol: string; chainName: string },
   ) => {
     if (fromToken.chainId !== toToken.chainId) {
-      return `Sending ${toToken.symbol} on ${toToken.chainName} from ${fromToken.symbol} on ${fromToken.chainName} isn't available yet — pick a token on the same chain.`;
+      return `Cross-chain sends aren't available yet. Pick a token on ${fromToken.chainName}.`;
     }
     if (toToken.address === 'native') {
-      return `Sending ${toToken.symbol} bought from ${fromToken.symbol} isn't supported yet — pick a token like USDC, or send ${fromToken.symbol} itself.`;
+      return `Can't send ${toToken.symbol} that way yet. Try USDC, or send ${fromToken.symbol} directly.`;
     }
     return null;
   },
@@ -327,11 +330,32 @@ const testMetrics = {
   insets: { top: 0, left: 0, right: 0, bottom: 0 },
 };
 
+// DevTransactionSimulator (rendered inside SwapScreen) calls useNavigation()
+// for its "Preview Pay"/"Preview Claim" buttons — that throws outside a real
+// navigator, so SwapScreen needs to be an actual registered screen here, not
+// just rendered standalone. `Pay`/`Claim` are real placeholder screens (not
+// asserted on by these tests) purely so a `navigate()` call from the dev
+// panel has somewhere real to land instead of erroring.
+type TestParamList = { Swap: undefined; Pay: { linkId: string; transactionId?: string }; Claim: { claimLinkId: string } };
+const TestStack = createNativeStackNavigator<TestParamList>();
+function PayPlaceholder() {
+  return <Text>pay preview</Text>;
+}
+function ClaimPlaceholder() {
+  return <Text>claim preview</Text>;
+}
+
 function renderSwapScreen() {
   return render(
     <SafeAreaProvider initialMetrics={testMetrics}>
       <TransactionStoreProvider>
-        <SwapScreen />
+        <NavigationContainer>
+          <TestStack.Navigator screenOptions={{ headerShown: false }}>
+            <TestStack.Screen name="Swap" component={SwapScreen} />
+            <TestStack.Screen name="Pay" component={PayPlaceholder} />
+            <TestStack.Screen name="Claim" component={ClaimPlaceholder} />
+          </TestStack.Navigator>
+        </NavigationContainer>
       </TransactionStoreProvider>
     </SafeAreaProvider>,
   );
@@ -380,7 +404,7 @@ beforeEach(async () => {
   mockSwapExecute.mockReset().mockResolvedValue('0xtxhash');
   mockTokenTransfer.mockReset().mockResolvedValue('0xtxhash');
   mockEnsState = mockEnsIdle;
-  mockSendToContact.mockReset().mockResolvedValue({ transactionId: 'tx-1', txHash: '0xdeposit', confirmed: true });
+  mockSendToContact.mockReset().mockResolvedValue({ transactionId: 'tx-1', txHash: '0xdeposit', confirmed: true, notified: true });
   mockSwapAndForward
     .mockReset()
     .mockResolvedValue({ swapTxHash: '0xswap', transferTxHash: '0xforward', forwardedAmount: '99.5' });
@@ -811,18 +835,18 @@ describe('SwapScreen', () => {
       expect(screen.getByText('Solana Address')).toBeTruthy();
     });
 
-    it('detects an email as redeemable later', async () => {
+    it('does not show a detection badge for an email destination — it would only repeat what was just typed', async () => {
       await renderSwapScreen();
       await goToSendTab();
       await fireEvent.changeText(screen.getByTestId('destination-input'), 'ama@example.com');
-      expect(screen.getByText('Email — redeemable once claimed')).toBeTruthy();
+      expect(screen.queryByText('Email (redeemable once claimed)')).toBeNull();
     });
 
-    it('detects a Ghana mobile number by network', async () => {
+    it('does not show a detection badge for a Ghana mobile number', async () => {
       await renderSwapScreen();
       await goToSendTab();
       await fireEvent.changeText(screen.getByTestId('destination-input'), '0241234567');
-      expect(screen.getByText('MTN · Ghana')).toBeTruthy();
+      expect(screen.queryByText('MTN · Ghana')).toBeNull();
     });
 
     it('shows no country select for a non-phone destination', async () => {
@@ -847,8 +871,10 @@ describe('SwapScreen', () => {
       await fireEvent.press(screen.getByTestId('country-option-234')); // Nigeria
 
       expect(screen.getByTestId('country-select').props.accessibilityLabel).toBe('Country, currently Nigeria');
-      // no Ghana carrier data for a Nigerian number — falls back to a bare label
-      expect(screen.getByText('Phone Number · Nigeria')).toBeTruthy();
+      // No detection badge for a contact destination (see the "does not show
+      // a detection badge" tests above) — the country-select chip itself is
+      // what shows the change.
+      expect(screen.queryByText('Phone Number · Nigeria')).toBeNull();
     });
   });
 
@@ -992,7 +1018,7 @@ describe('SwapScreen', () => {
       expect(mockSwapAndForward).not.toHaveBeenCalled();
       expect(mockTokenTransfer).not.toHaveBeenCalled();
       expect(screen.getByTestId('send-error')).toBeTruthy();
-      expect(screen.getByText(/same chain/)).toBeTruthy();
+      expect(screen.getByText(/Cross-chain sends aren't available/)).toBeTruthy();
     });
 
     it('routes a fiat-source send-to-address through the real onramp flow, straight to the "form" step with the typed address preset', async () => {
@@ -1034,17 +1060,20 @@ describe('SwapScreen', () => {
         amount: 10,
         toAmount: 10,
         senderAddress: '0x2222222222222222222222222222222222222222',
+        // A stable placeholder, not something this screen asks the sender
+        // for — see SwapScreen.tsx's `PLACEHOLDER_PAYER_EMAIL`.
+        senderEmail: 'sender@morapay.io',
         recipient: { kind: 'email', value: 'ama@example.com' },
       });
-      expect(screen.getByTestId('send-success')).toBeTruthy();
-      expect(screen.getByText(/can claim it now/)).toBeTruthy();
+      expect(screen.getByTestId('contact-send-result-sheet')).toBeTruthy();
+      expect(screen.getByText(/emailed ama@example.com their claim code/)).toBeTruthy();
       // No destination-token pill for a contact — there's no address whose
       // asset needs choosing.
       expect(screen.queryByTestId('send-destination-token-pill')).toBeNull();
     });
 
     it('says so plainly when the deposit landed but confirmation has not — never reporting a real send as a failure', async () => {
-      mockSendToContact.mockResolvedValue({ transactionId: 'tx-1', txHash: '0xdeposit', confirmed: false });
+      mockSendToContact.mockResolvedValue({ transactionId: 'tx-1', txHash: '0xdeposit', confirmed: false, notified: true });
       await renderSwapScreen();
       await connectWallet();
       await selectFromToken('usdc-ethereum');
@@ -1057,8 +1086,43 @@ describe('SwapScreen', () => {
       });
 
       expect(screen.queryByTestId('send-error')).toBeNull();
-      expect(screen.getByTestId('send-success')).toBeTruthy();
+      expect(screen.getByTestId('contact-send-result-sheet')).toBeTruthy();
       expect(screen.getByText(/still confirming/)).toBeTruthy();
+    });
+
+    it('is honest when the claim details could not be emailed, without calling the send itself a failure', async () => {
+      mockSendToContact.mockResolvedValue({ transactionId: 'tx-1', txHash: '0xdeposit', confirmed: true, notified: false });
+      await renderSwapScreen();
+      await connectWallet();
+      await selectFromToken('usdc-ethereum');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send', selected: false }));
+      await fireEvent.changeText(screen.getByTestId('from-amount-input'), '1000');
+      await fireEvent.changeText(screen.getByTestId('destination-input'), 'ama@example.com');
+
+      await act(async () => {
+        await fireEvent.press(screen.getByTestId('send-cta'));
+      });
+
+      expect(screen.queryByTestId('send-error')).toBeNull();
+      expect(screen.getByTestId('contact-send-result-sheet')).toBeTruthy();
+      expect(screen.getByText(/couldn't email the claim details/)).toBeTruthy();
+    });
+
+    it('tells a phone-recipient sender we texted them their claim code', async () => {
+      await renderSwapScreen();
+      await connectWallet();
+      await selectFromToken('usdc-ethereum');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send', selected: false }));
+      await fireEvent.changeText(screen.getByTestId('from-amount-input'), '1000');
+      await fireEvent.changeText(screen.getByTestId('destination-input'), '+15551234567');
+
+      await act(async () => {
+        await fireEvent.press(screen.getByTestId('send-cta'));
+      });
+
+      expect(mockSendToContact).toHaveBeenCalledWith(expect.objectContaining({ recipient: { kind: 'phone', value: '+15551234567' } }));
+      expect(screen.getByTestId('contact-send-result-sheet')).toBeTruthy();
+      expect(screen.getByText(/texted \+15551234567 their claim code/)).toBeTruthy();
     });
 
     it('refuses a native gas token to a contact up front — Core cannot pool-deposit one', async () => {
@@ -1069,13 +1133,16 @@ describe('SwapScreen', () => {
       await fireEvent.changeText(screen.getByTestId('from-amount-input'), '1000000');
       await fireEvent.changeText(screen.getByTestId('destination-input'), 'ama@example.com');
 
+      // The button itself goes to a disabled "Coming soon" state rather
+      // than an enabled button that bounces a long error on press.
+      expect(screen.getByTestId('send-cta').props.accessibilityState?.disabled).toBe(true);
+      expect(screen.getByText('Coming soon')).toBeTruthy();
+      expect(screen.getByText(/Try a token like USDC/)).toBeTruthy();
+
       await act(async () => {
         await fireEvent.press(screen.getByTestId('send-cta'));
       });
-
       expect(mockSendToContact).not.toHaveBeenCalled();
-      expect(screen.getByTestId('send-error')).toBeTruthy();
-      expect(screen.getByText(/try a token like USDC/)).toBeTruthy();
     });
 
     it('files a real payment request in Receive mode and surfaces the pay link', async () => {
@@ -1447,7 +1514,13 @@ describe('SwapScreen', () => {
       expect(button.props.accessibilityState?.disabled).toBe(true);
 
       await fireEvent.changeText(screen.getByTestId('from-amount-input'), '5000'); // 50.00 GHS
-      await fireEvent.changeText(screen.getByTestId('destination-input'), '0241234567');
+      // A wallet address, not a phone/email — this test is only about
+      // wallet-connection not being required for a fiat balance; a contact
+      // destination would hit the separate (and separately tested)
+      // fiat-to-contact "Coming soon" block instead.
+      await fireEvent.changeText(screen.getByTestId('destination-input'), '0x1234567890123456789012345678901234567890');
+      await fireEvent.press(screen.getByTestId('send-destination-token-pill'));
+      await fireEvent.press(screen.getByTestId('token-row-eth-native'));
       expect(button.props.accessibilityLabel).toBe('Send');
       expect(screen.getByTestId('send-cta').props.accessibilityState?.disabled).toBe(false);
     });

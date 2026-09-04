@@ -1,6 +1,17 @@
 import type { ComponentProps } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { TransactionStoreProvider, useTransactionStore } from '../../../transactions/TransactionStoreContext';
+
+// MomoSheet now reads `useSafeAreaInsets()` (for the home-indicator inset —
+// see AGENTS.md's edge-to-edge UI requirement), which throws without a
+// `SafeAreaProvider` ancestor.
+const testMetrics = {
+  frame: { x: 0, y: 0, width: 375, height: 812 },
+  insets: { top: 0, left: 0, right: 0, bottom: 0 },
+};
 
 // Real account-name lookup (`/api/public/validate/momo`) is mocked here —
 // these tests aren't the place to exercise network I/O. Outcome is keyed
@@ -144,28 +155,43 @@ const NGN_MOMO_TOKEN: SwapToken = {
 // "only ETH's own chains show up, not every token."
 const ETH_ARBITRUM: SwapToken = { ...ETH, id: 'eth-arbitrum', chainName: 'Arbitrum', chainId: '42161' };
 
+// Exposes the same TransactionStoreProvider instance MomoSheet itself reads
+// from, so tests can assert on `activeTransactions` directly instead of only
+// inferring it from the sheet's own UI — same pattern
+// ActiveTransactionPill.test.tsx's own `Harness` uses.
+let capturedStore: ReturnType<typeof useTransactionStore> | undefined;
+function StoreCapture() {
+  capturedStore = useTransactionStore();
+  return null;
+}
+
 async function renderSheet(overrides: Partial<ComponentProps<typeof MomoSheet>> = {}) {
   const onClose = jest.fn();
   const onComplete = jest.fn();
   const onConnectWallet = jest.fn();
   const onSelectToToken = jest.fn();
   const utils = await render(
-    <MomoSheet
-      visible
-      direction="offramp"
-      fromToken={USDC_BASE}
-      toToken={GHS}
-      amount={1}
-      toAmount={3245.67}
-      walletConnected={false}
-      walletAddress={null}
-      onConnectWallet={onConnectWallet}
-      onClose={onClose}
-      onComplete={onComplete}
-      tokens={[ETH, ETH_ARBITRUM, USDC_BASE, GHS]}
-      onSelectToToken={onSelectToToken}
-      {...overrides}
-    />,
+    <SafeAreaProvider initialMetrics={testMetrics}>
+      <TransactionStoreProvider>
+        <StoreCapture />
+        <MomoSheet
+          visible
+          direction="offramp"
+          fromToken={USDC_BASE}
+          toToken={GHS}
+          amount={1}
+          toAmount={3245.67}
+          walletConnected={false}
+          walletAddress={null}
+          onConnectWallet={onConnectWallet}
+          onClose={onClose}
+          onComplete={onComplete}
+          tokens={[ETH, ETH_ARBITRUM, USDC_BASE, GHS]}
+          onSelectToToken={onSelectToToken}
+          {...overrides}
+        />
+      </TransactionStoreProvider>
+    </SafeAreaProvider>,
   );
   return { ...utils, onClose, onComplete, onConnectWallet, onSelectToToken };
 }
@@ -217,21 +243,25 @@ beforeEach(async () => {
 describe('MomoSheet', () => {
   it('renders nothing when not visible', async () => {
     await render(
-      <MomoSheet
-        visible={false}
-        direction="offramp"
-        fromToken={ETH}
-        toToken={GHS}
-        amount={1}
-        toAmount={3245.67}
-        walletConnected={false}
-        walletAddress={null}
-        onConnectWallet={() => {}}
-        onClose={() => {}}
-        onComplete={() => {}}
-        tokens={[]}
-        onSelectToToken={() => {}}
-      />,
+      <SafeAreaProvider initialMetrics={testMetrics}>
+        <TransactionStoreProvider>
+          <MomoSheet
+            visible={false}
+            direction="offramp"
+            fromToken={ETH}
+            toToken={GHS}
+            amount={1}
+            toAmount={3245.67}
+            walletConnected={false}
+            walletAddress={null}
+            onConnectWallet={() => {}}
+            onClose={() => {}}
+            onComplete={() => {}}
+            tokens={[]}
+            onSelectToToken={() => {}}
+          />
+        </TransactionStoreProvider>
+      </SafeAreaProvider>,
     );
     expect(screen.queryByTestId('momo-phone-input')).toBeNull();
   });
@@ -394,6 +424,21 @@ describe('MomoSheet', () => {
       expect(screen.getByText('Transfer Successful')).toBeTruthy();
       expect(screen.getByText(/sent to Ama Mensah/)).toBeTruthy();
       expect(screen.getByTestId('momo-done')).toBeTruthy();
+
+      // The transaction tracker's own independent poll (TransactionStoreContext.tsx)
+      // should have picked up the same real merchant reference and landed on
+      // COMPLETED too — this is what actually makes the pill/sheet real
+      // instead of dev-simulator-only (see this session's Tier 1 work).
+      expect(capturedStore?.transactions).toContainEqual(
+        expect.objectContaining({
+          amount: 25,
+          cryptoType: 'USDC',
+          fiatType: 'GHS',
+          status: 'COMPLETED',
+          merchantReference: 'mock-merchant-ref',
+        }),
+      );
+      expect(capturedStore?.activeTransactions).toHaveLength(0); // COMPLETED is terminal, not "active"
     } finally {
       jest.useRealTimers();
     }
@@ -863,6 +908,19 @@ describe('MomoSheet', () => {
         );
         expect(screen.getByText('Awaiting Approval')).toBeTruthy();
 
+        // Same real-tracker handoff the offramp flow gets — direction:
+        // 'onramp' is what tells the pill/stepper this transaction paid GHS
+        // rather than ETH, so it doesn't misread as "Swapping 500 ETH…".
+        expect(capturedStore?.transactions).toContainEqual(
+          expect.objectContaining({
+            amount: 500,
+            cryptoType: 'ETH',
+            fiatType: 'GHS',
+            direction: 'onramp',
+            merchantReference: 'mock-merchant-ref',
+          }),
+        );
+
         // First poll tick — mocked transaction already resolves COMPLETED/DIRECT.
         await act(async () => {
           await jest.advanceTimersByTimeAsync(4000);
@@ -873,6 +931,11 @@ describe('MomoSheet', () => {
         );
         expect(screen.getByText('Transaction Sent')).toBeTruthy();
         expect(screen.getByText(/0x2222\.\.\.2222/)).toBeTruthy();
+
+        expect(capturedStore?.transactions).toContainEqual(
+          expect.objectContaining({ direction: 'onramp', status: 'COMPLETED', merchantReference: 'mock-merchant-ref' }),
+        );
+        expect(capturedStore?.activeTransactions).toHaveLength(0); // COMPLETED is terminal, not "active"
       } finally {
         jest.useRealTimers();
       }

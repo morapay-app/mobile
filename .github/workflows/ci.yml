@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main, production]
+  pull_request:
+
+jobs:
+  typecheck-test-build:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_BACKEND_API_URL: https://api.example.com
+      EXPO_PUBLIC_DYNAMIC_ENVIRONMENT_ID: "00000000-0000-0000-0000-000000000000"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Keep in sync with package.json packageManager.
+          version: 11.24.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build web export
+        run: npx expo export -p web

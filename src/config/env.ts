@@ -20,3 +20,13 @@ export const DYNAMIC_ENVIRONMENT_ID = required(
   'EXPO_PUBLIC_DYNAMIC_ENVIRONMENT_ID',
   process.env.EXPO_PUBLIC_DYNAMIC_ENVIRONMENT_ID,
 );
+
+/** Pusher's `key`/`cluster` are the public half of its credential pair —
+ * meant to ship in client code, unlike `PUSHER_SECRET` (server-only, never
+ * here). Deliberately NOT `required()`: real-time push is an enhancement
+ * over the transaction tracker's own polling (see
+ * TransactionStoreContext.tsx's `pollRealRampTransaction`), which works
+ * fine on its own — an app built without these two set should still run,
+ * just without the faster push path. */
+export const PUSHER_KEY = process.env.EXPO_PUBLIC_PUSHER_KEY || undefined;
+export const PUSHER_CLUSTER = process.env.EXPO_PUBLIC_PUSHER_CLUSTER || undefined;

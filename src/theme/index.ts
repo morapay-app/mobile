@@ -8,3 +8,5 @@ export { fontFamilies, typeVariants, fontAssets } from './typography';
 export type { TypeVariant } from './typography';
 export { useAppFonts } from './useAppFonts';
 export { ThemeProvider, useTheme } from './ThemeProvider';
+export { DEFAULT_THEME_COLOR, updateThemeColor } from './themeColor';
+export { useSheetThemeColor } from './useSheetThemeColor';

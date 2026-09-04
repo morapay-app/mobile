@@ -136,10 +136,6 @@ export const BOOTSTRAP_TOKENS: SwapToken[] = [
 export const DEFAULT_FROM_TOKEN = BOOTSTRAP_TOKENS[3]; // USDC on Base
 export const DEFAULT_TO_TOKEN = BOOTSTRAP_TOKENS[2]; // ETH on Base
 
-/** Quick-pick row across the top of the sheet — shown once these ids are
- * present in whatever token list is currently loaded. */
-export const QUICK_PICK_IDS = ['eth-native', 'usdc-ethereum', 'usdt-ethereum', 'weth-ethereum', 'sol-native'];
-
 export function findToken(tokens: SwapToken[], id: string): SwapToken | undefined {
   return tokens.find((token) => token.id === id);
 }

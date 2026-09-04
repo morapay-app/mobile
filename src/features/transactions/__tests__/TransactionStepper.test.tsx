@@ -29,4 +29,15 @@ describe('TransactionStepper', () => {
     await render(<TransactionStepper status="FAILED" fiatType="GHS" />);
     expect(screen.queryByTestId('transaction-stepper')).toBeNull();
   });
+
+  it('reads fiat-in, crypto-out for an onramp — the same status values mean the opposite thing', async () => {
+    await render(<TransactionStepper status="ON_CHAIN_CONFIRMING" fiatType="GHS" cryptoType="ETH" direction="onramp" />);
+    expect(screen.getByText('Confirming Payment')).toBeTruthy();
+
+    await render(<TransactionStepper status="SWAP_PROCESSING" fiatType="GHS" cryptoType="ETH" direction="onramp" />);
+    expect(screen.getByText('Converting to ETH')).toBeTruthy();
+
+    await render(<TransactionStepper status="MOMO_SETTLEMENT" fiatType="GHS" cryptoType="ETH" direction="onramp" />);
+    expect(screen.getByText('Sending ETH to Your Wallet')).toBeTruthy();
+  });
 });

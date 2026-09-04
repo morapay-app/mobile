@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Check, ChevronDown, ClipboardPaste, Wallet, X } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { swapColors, swapFonts, swapRadii } from '../theme';
 import { noOutlineStyle } from '../webNoOutline';
@@ -38,6 +39,7 @@ import {
 import { sanitizeMessage } from '../../../api/sanitizeApiError';
 import { matchesRampCorridor } from '../rampCorridor';
 import { useRampDepositSend } from '../useRampDepositSend';
+import { useTransactionStore } from '../../transactions/TransactionStoreContext';
 import { PrimaryButton } from './PrimaryButton';
 
 export type MomoSheetProps = {
@@ -163,6 +165,17 @@ export function MomoSheet({
 }: MomoSheetProps) {
   const isOfframp = direction === 'offramp';
   const { sendToRampDepositAddress } = useRampDepositSend();
+  // Real onramp/offramp submissions hand off to the transaction tracker's
+  // own polling (see TransactionStoreContext.tsx's `pollRealRampTransaction`)
+  // — separate from this sheet's own `pollRampUntilSettled` below, which
+  // still drives this sheet's own UI and stops when the sheet closes; the
+  // store's copy keeps going so the pill/sheet reflect reality even after
+  // this sheet is dismissed. Onramp isn't wired to `startTransaction` yet —
+  // that pipeline's ON_CHAIN_CONFIRMING/SWAP_PROCESSING/MOMO_SETTLEMENT
+  // labels were written for the offramp direction (crypto in, fiat out) and
+  // would read wrong for onramp as-is; a real fix needs onramp-specific
+  // status labels, not just wiring the same statuses through.
+  const { startTransaction } = useTransactionStore();
   const [phase, setPhase] = useState<Phase>('form');
   // A pending close (X pressed, or backdrop tapped) while `requiresCloseConfirmation`
   // is true — shows a "are you sure" step instead of closing immediately.
@@ -202,6 +215,12 @@ export function MomoSheet({
 
   const translateY = useRef(new Animated.Value(40)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  // No `useSheetThemeColor` call here — see SheetShell's doc comment for
+  // why a single flat theme-color override is wrong for a sheet whose top
+  // (dark backdrop) and bottom (this sheet's own cream body) are two
+  // different real colors. `App.tsx`'s `AppRoot` sizing the app to the
+  // TRUE full screen height is what actually fixes this.
+  const insets = useSafeAreaInsets();
   // Bumped whenever the sheet (re)opens or is closed, so an in-flight poll
   // loop from a previous attempt notices it's stale and stops updating
   // state instead of racing a fresh one.
@@ -463,7 +482,7 @@ export function MomoSheet({
     pollRampUntilSettled(ref, walletAddr, generation, {
       pending:
         railMethod === 'bank' ? 'Waiting for your bank transfer to arrive…' : 'Waiting for your mobile money confirmation…',
-      distributionPending: `Payment received — sending ${toToken.symbol} to your wallet…`,
+      distributionPending: `Payment received. Sending ${toToken.symbol} to your wallet…`,
       defaultFailure:
         railMethod === 'bank' ? "The bank transfer couldn't be completed." : "The mobile money payment couldn't be completed.",
     });
@@ -518,6 +537,16 @@ export function MomoSheet({
         });
         if (pollGenerationRef.current !== generation) return;
         setMerchantReference(initiated.merchantReference);
+        // Real merchant reference now exists — hand this off to the
+        // tracker's own polling so the pill/sheet reflect this transaction
+        // from here on, independent of whether this sheet stays open.
+        startTransaction({
+          amount,
+          cryptoType: fromToken.symbol,
+          fiatType: toToken.symbol,
+          merchantReference: initiated.merchantReference,
+          walletAddress,
+        });
 
         const payout = await setOfframpPayoutAccount({
           merchantReference: initiated.merchantReference,
@@ -585,6 +614,18 @@ export function MomoSheet({
       });
       if (pollGenerationRef.current !== generation) return;
       setMerchantReference(initiated.merchantReference);
+      // Same real-tracker handoff as the offramp path above — `amount` here
+      // is in fromToken (fiat) units, see this sheet's own `amount` prop doc,
+      // so `direction: 'onramp'` is what tells the tracker's labels/pill to
+      // read it as "paying fiat" rather than "paying crypto".
+      startTransaction({
+        amount,
+        cryptoType: toToken.symbol,
+        fiatType: fromToken.symbol,
+        direction: 'onramp',
+        merchantReference: initiated.merchantReference,
+        walletAddress: resolvedReceiveAddress,
+      });
 
       if (fiatRail.method === 'bank') {
         // No user-provided payment detail for this rail — confirming is
@@ -689,8 +730,8 @@ export function MomoSheet({
     (isOfframp
       ? 'Confirming your transfer.'
       : onrampAwaitingIsBank
-        ? "Setting up your bank transfer — you'll get a real account to pay into in a moment."
-        : `Approve the mobile money charge on your phone — we'll send ${toToken.symbol} to your destination once it clears.`);
+        ? "Setting up your bank transfer. You'll get a real account to pay into shortly."
+        : `Approve the mobile money charge on your phone. We'll send ${toToken.symbol} once it clears.`);
 
   // Only a step reached by moving *forward* from an earlier, still-valid
   // step can go back — 'receive'/offramp's 'form' are the first thing the
@@ -734,7 +775,10 @@ export function MomoSheet({
         <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseRequest} accessibilityLabel="Close" />
       </Animated.View>
 
-      <Animated.View testID="momo-sheet" style={[styles.sheet, { transform: [{ translateY }] }]}>
+      <Animated.View
+        testID="momo-sheet"
+        style={[styles.sheet, { paddingBottom: 24 + insets.bottom }, { transform: [{ translateY }] }]}
+      >
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             {canGoBack && (
@@ -1217,7 +1261,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: swapRadii.card,
     borderTopRightRadius: swapRadii.card,
     paddingTop: 20,
-    paddingBottom: 24,
     overflow: 'hidden',
   },
   header: {

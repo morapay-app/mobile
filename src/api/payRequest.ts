@@ -11,18 +11,24 @@ import { ApiError, apiGet, apiPost } from './client';
  *
  *   - `GET /api/public/requests/by-link/:linkId` — looks up the request by
  *     the `linkId` a real `payLink` encodes (`.../pay/request/<linkId>`).
- *     IMPORTANT, verified live against the deployed backend (not just the
- *     repo source, which implies a richer shape): the response actually
- *     returned today is thin —
- *     `{ linkId, transaction: { t_amount, t_token, t_chain, toIdentifier } }`
- *     — no `id`, `transactionId`, `status`, or `claim`. Every field below
- *     beyond `linkId` and the four `transaction` fields shown is typed
- *     optional for that reason; do not assume any of them are present.
- *     Practically, that means `by-link` alone cannot currently tell a payer
- *     whether a request is already paid, or supply the `transactionId`
- *     `calldata` needs — see `usePayRequest`'s own doc for how this app
- *     works around that (threading `transactionId` through its own deep
- *     link for requests created in-app) and never guesses at it otherwise.
+ *     Re-verified live after Core's `serializePublicRequestByLink` rewrite
+ *     (core/src/lib/payment-request/public-request-by-link.ts): the response
+ *     is now richer than before —
+ *     `{ linkId, transaction: { id, t_amount, t_token, t_chain, toIdentifier,
+ *     chargeAmount, chargeToken, chargeChain, settlementAmount,
+ *     settlementToken, settlementChain, payerPaysFiat } | null }`.
+ *     `transaction.id` is a real transaction id whenever `transaction` isn't
+ *     null (still typed optional here defensively — this endpoint has
+ *     changed shape once already). `t_amount`/`t_token`/`t_chain` are kept
+ *     as literal aliases of `chargeAmount`/`chargeToken`/`chargeChain` for
+ *     back-compat, not a separate figure — no UI change needed to read the
+ *     right amount. `payerPaysFiat` is the one genuinely new, actionable
+ *     field: a real, server-computed flag for "this request needs a fiat
+ *     deposit, not a wallet transfer" — see `usePayRequest`'s own doc for
+ *     how that's used to skip a doomed `calldata` call entirely. Still no
+ *     `status`/`claim` on the wire, so "already paid" still can't be told
+ *     from `by-link` alone — that part of the workaround (threading
+ *     `transactionId` through this app's own deep link) is unchanged.
  *   - `GET /api/public/requests/calldata?transaction_id=...` — the real
  *     payment instruction for that transaction (core/src/services/
  *     payment-instruction.service.ts:`buildPaymentInstructionForPoolDeposit`).
@@ -65,6 +71,25 @@ export type PayRequestTransaction = {
   receiveSummary?: string | null;
   createdAt?: string;
   toIdentifier?: string;
+  /** What the payer actually owes — same value as `t_amount`/`t_token`/
+   * `t_chain` above (Core's serializer keeps those as literal aliases), just
+   * under the name that matches its real meaning. */
+  chargeAmount?: string;
+  chargeToken?: string;
+  chargeChain?: string;
+  /** What the beneficiary ends up with once claimed — often different from
+   * the charge side (e.g. a fiat request settles to Base USDC). Not
+   * currently shown anywhere in this app's Pay UI; kept for completeness. */
+  settlementAmount?: string;
+  settlementToken?: string;
+  settlementChain?: string;
+  /** The real, server-computed answer to "does this request need a fiat
+   * deposit instead of a wallet transfer" — see `usePayRequest`'s doc for
+   * how this short-circuits straight to `unsupported` instead of attempting
+   * a `calldata` call Core would refuse anyway (`REQUEST_EXPECTS_FIAT`, only
+   * reachable today via the newer `by-link/:linkId/calldata` route this app
+   * doesn't call — see this file's own doc on why). */
+  payerPaysFiat?: boolean;
 };
 
 export type PayRequestClaim = {

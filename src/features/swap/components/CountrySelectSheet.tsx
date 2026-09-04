@@ -29,7 +29,7 @@ export function CountrySelectSheet({ visible, countryCode, onSelect, onClose }: 
       onClose={onClose}
       testID="country-select-sheet"
       title="Choose Country"
-      subtitle="A local number on its own is ambiguous — this is the calling code it gets sent with."
+      subtitle="This is the calling code your number gets sent with."
     >
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {PHONE_COUNTRIES.map((country) => {

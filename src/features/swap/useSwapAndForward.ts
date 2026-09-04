@@ -43,10 +43,10 @@ export type SwapAndForwardResult = {
  */
 export function swapAndForwardBlockedReason(fromToken: SwapToken, toToken: SwapToken): string | null {
   if (fromToken.chainId !== toToken.chainId) {
-    return `Sending ${toToken.symbol} on ${toToken.chainName} from ${fromToken.symbol} on ${fromToken.chainName} isn't available yet — pick a token on the same chain.`;
+    return `Cross-chain sends aren't available yet. Pick a token on ${fromToken.chainName}.`;
   }
   if (toToken.address === 'native') {
-    return `Sending ${toToken.symbol} bought from ${fromToken.symbol} isn't supported yet — pick a token like USDC, or send ${fromToken.symbol} itself.`;
+    return `Can't send ${toToken.symbol} that way yet. Try USDC, or send ${fromToken.symbol} directly.`;
   }
   return null;
 }
@@ -114,9 +114,7 @@ export function useSwapAndForward() {
     }
 
     if (received <= 0) {
-      throw new Error(
-        `Swapped to ${toToken.symbol}, but it hadn't arrived in time to send on — it's in your wallet. Try sending ${toToken.symbol} directly.`,
-      );
+      throw new Error(`Swap done, but forwarding timed out. ${toToken.symbol} is in your wallet — send it directly.`);
     }
 
     try {
@@ -127,10 +125,8 @@ export function useSwapAndForward() {
       });
       return { swapTxHash, transferTxHash, forwardedAmount: received.toString() };
     } catch (err) {
-      const reason = err instanceof Error ? err.message : 'it could not be sent on';
-      throw new Error(
-        `Swapped to ${toToken.symbol}, but sending it on didn't go through — it's in your wallet. ${reason}`,
-      );
+      const reason = err instanceof Error ? err.message : 'it could not be sent on.';
+      throw new Error(`Swap done, but the forward failed. ${toToken.symbol} is in your wallet. ${reason}`);
     }
   };
 

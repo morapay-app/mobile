@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, FlatList, Image, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Check } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { swapColors, swapFonts, swapRadii } from '../theme';
 import { getChainMeta } from '../chainMeta';
@@ -32,6 +33,12 @@ const DISMISS_THRESHOLD = 120;
 export function NetworkSelectSheet({ visible, options, selectedChainId, onClose, onSelect }: NetworkSelectSheetProps) {
   const translateY = useRef(new Animated.Value(400)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  // No `useSheetThemeColor` call here — see SheetShell's doc comment for
+  // why a single flat theme-color override is wrong for a sheet whose top
+  // (dark backdrop) and bottom (this sheet's own cream body) are two
+  // different real colors. `App.tsx`'s `AppRoot` sizing the app to the
+  // TRUE full screen height is what actually fixes this.
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) {
@@ -79,14 +86,17 @@ export function NetworkSelectSheet({ visible, options, selectedChainId, onClose,
         <Pressable style={StyleSheet.absoluteFill} onPress={close} accessibilityLabel="Close" />
       </Animated.View>
 
-      <Animated.View testID="network-select-sheet" style={[styles.sheet, { transform: [{ translateY }] }]}>
+      <Animated.View
+        testID="network-select-sheet"
+        style={[styles.sheet, { paddingBottom: 24 + insets.bottom }, { transform: [{ translateY }] }]}
+      >
         <View {...panResponder.panHandlers} style={styles.handleArea}>
           <View style={styles.handle} />
         </View>
 
         <View style={styles.header}>
           <Text style={styles.title}>Choose Network</Text>
-          <Text style={styles.subtitle}>Only send to the network shown — sending on the wrong one can lose funds.</Text>
+          <Text style={styles.subtitle}>Only send to the network shown. The wrong one can lose funds.</Text>
         </View>
 
         <FlatList
@@ -140,7 +150,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: swapRadii.card,
     borderTopRightRadius: swapRadii.card,
     overflow: 'hidden',
-    paddingBottom: 24,
   },
   handleArea: {
     alignItems: 'center',

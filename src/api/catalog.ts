@@ -17,13 +17,104 @@ type SquidTokenRaw = {
 export const NATIVE_PLACEHOLDER = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
 /**
- * `/api/squid/tokens` is Squid's full bridging catalog — 11,000+ entries
- * across ~100 chains, most of them obscure (ThaiChain, Ubiq, Expanse...).
- * This narrows to the chains that actually matter (verified live: these
- * seven cover 2,681 EVM tokens plus Solana's 6,139), rather than either
- * "8 hand-picked tokens" or "literally everything Squid has ever indexed."
+ * `/api/squid/tokens` is Squid's full bridging catalog — verified live,
+ * 11,158 entries across ~90 chains, almost all of them either irrelevant
+ * (dozens of Cosmos chains, XRPL, random EVM L2s) or outright junk (anyone
+ * can list an ERC-20 with any name/symbol on Squid's index — this is not a
+ * curated marketplace). The real morapay web app never shows that raw feed
+ * either: `frontend/packages/react/src/catalog.ts`
+ * (`SELECTOR_CHAIN_IDS`/`SELECTOR_SYMBOLS_BY_CHAIN`) is the actual,
+ * shared source of truth for "which chains and symbols are real, tradeable
+ * morapay assets" — confirmed by reading that file directly and by fetching
+ * `app.morapay.io`'s own `/api/squid/tokens` response live (same raw feed,
+ * same 11k+ count) and comparing it against what the app's own token picker
+ * actually renders.
+ *
+ * This app can't just import that package (private, lives in the separate
+ * `morapay-web` monorepo — this is a standalone repo per this app's own
+ * CLAUDE.md), so `SELECTOR_CHAIN_IDS`/`SELECTOR_SYMBOLS_BY_CHAIN`/
+ * `NATIVE_SYMBOLS_BY_CHAIN` below are a deliberate, trimmed mirror of it —
+ * copied verbatim for the chains this app surfaces. The canonical list also
+ * covers Bitcoin, Sui, and Tron; those are deliberately NOT mirrored here —
+ * this app has no wallet/signing path for any of them (`dynamic/
+ * viemChains.ts` is EVM-only, no non-EVM extension beyond Solana).
+ *
+ * Stellar IS included below, for picker parity with the real web app, even
+ * though this app can't sign for it yet either — safe to show because every
+ * real execution path already blocks it gracefully on its own, the same way
+ * it already blocks Solana-same-chain swaps today: `useSwapExecution`/
+ * `useTokenTransfer` both `Number.parseInt` the chain id and refuse a NaN
+ * result ("This pair/chain isn't supported yet"), and
+ * `contactSendBlockedReason` explicitly checks `viemChainForId`. Nothing
+ * needed to change in any of those to make adding this chain safe — this
+ * comment just records why that's true, so it isn't re-litigated later.
+ * Re-derive this whole list from the real source whenever the canonical
+ * catalog changes; don't let it silently drift.
  */
-const MAJOR_CHAIN_IDS = new Set(['1', '8453', '56', '42161', '137', '43114', '10', 'solana-mainnet-beta']);
+const MAJOR_CHAIN_IDS = new Set(['1', '8453', '56', '42161', '137', '43114', '10', 'solana-mainnet-beta', 'stellar-mainnet']);
+
+/** Native/gas symbols per chain — always allowed when Squid actually returns
+ * them. Mirrors `NATIVE_SYMBOLS_BY_CHAIN` in the canonical catalog, trimmed
+ * to `MAJOR_CHAIN_IDS`. */
+const NATIVE_SYMBOLS_BY_CHAIN: Readonly<Record<string, readonly string[]>> = {
+  '1': ['ETH'],
+  '8453': ['ETH'],
+  '42161': ['ETH', 'ARB'],
+  '10': ['ETH', 'OP'],
+  '137': ['MATIC', 'POL'],
+  '56': ['BNB'],
+  '43114': ['AVAX'],
+  'solana-mainnet-beta': ['SOL'],
+  'stellar-mainnet': ['XLM'],
+};
+
+/** Extra symbols per chain, beyond native + USDC/USDT (handled separately —
+ * see `isSelectorStableSymbol`). Mirrors `SELECTOR_SYMBOLS_BY_CHAIN` in the
+ * canonical catalog, trimmed to `MAJOR_CHAIN_IDS`. */
+const SELECTOR_SYMBOLS_BY_CHAIN: Readonly<Record<string, readonly string[]>> = {
+  '1': ['ETH', 'USDT', 'USDC', 'WBTC', 'LINK', 'UNI', 'AAVE', 'LDO', 'MANA', 'SAND', 'APE', 'SHIB', 'PEPE', 'WXRP', 'TURBO', 'MOG'],
+  '8453': ['ETH', 'USDC', 'AERO', 'DEGEN', 'BRETT', 'TOSHI', 'NORMIE'],
+  '42161': ['ARB', 'GMX', 'MAGIC', 'ETH', 'USDC'],
+  '10': ['OP', 'VELO', 'USDC'],
+  '137': ['POL', 'MATIC', 'USDC'],
+  '56': ['BNB', 'CAKE', 'FLOKI', 'BABYDOGE', 'USDC', 'USDT'],
+  '43114': ['AVAX', 'JOE', 'USDC'],
+  'solana-mainnet-beta': [
+    'SOL', 'JUP', 'RAY', 'JITO', 'PYTH', 'BONK', 'WIF', 'POPCAT', 'PNUT', 'PENGU', 'FARTCOIN', 'MEW', 'TRUMP', 'USDC', 'USDT',
+  ],
+  'stellar-mainnet': ['XLM', 'USDC'],
+};
+
+/** USDC/USDT and common bridged variants (USDC.e, USDbC, USDT0, etc.) —
+ * verbatim copy of `isSelectorStableSymbol` from the canonical filter. */
+function isSelectorStableSymbol(symbol: string): boolean {
+  const s = symbol.trim().toUpperCase();
+  if (s === 'USDC' || s === 'USDT') return true;
+  if (s === 'USDBC' || s === 'USDCE') return true;
+  if (/^USDC[._-]/.test(s)) return true;
+  if (/^USDT([._-]|0)/.test(s)) return true;
+  return false;
+}
+
+/** Real allowlist check — a token only surfaces in the picker if it's this
+ * chain's native asset, a recognized USDC/USDT variant, or explicitly named
+ * in `SELECTOR_SYMBOLS_BY_CHAIN`. Mirrors `isTokenAllowedInSelector`,
+ * trimmed to the chains/symbols this app actually mirrors above. */
+function isTokenAllowedInCatalog(chainId: string, symbol: string): boolean {
+  const sym = symbol.trim().toUpperCase();
+  if (!sym) return false;
+  const extras = SELECTOR_SYMBOLS_BY_CHAIN[chainId];
+  if (!extras) return false;
+  if (isSelectorStableSymbol(sym)) {
+    const wantsUsdc = sym === 'USDC' || sym === 'USDBC' || sym === 'USDCE' || /^USDC[._-]/.test(sym);
+    const wantsUsdt = sym === 'USDT' || /^USDT([._-]|0)/.test(sym);
+    if (wantsUsdc) return extras.some((listed) => listed === 'USDC' || listed.startsWith('USDC'));
+    if (wantsUsdt) return extras.some((listed) => listed === 'USDT' || listed.startsWith('USDT'));
+    return extras.includes(sym);
+  }
+  if (NATIVE_SYMBOLS_BY_CHAIN[chainId]?.includes(sym)) return true;
+  return extras.includes(sym);
+}
 
 /** These get a stable, human-readable id (referenced elsewhere — defaults,
  * quick-picks, the major/stable-token checks in swapButtonState.ts) instead
@@ -106,12 +197,19 @@ export async function fetchSwapTokens(): Promise<SwapToken[]> {
     if (found) tokens.push(toSwapToken(found, named.id));
   }
 
-  // Everything else on a major chain: well-known tokens first (by the
-  // curated popularity list above), alphabetical within/after that — so
-  // scrolling (or the batches useSwapTokens loads incrementally) surfaces
-  // recognizable tokens before obscure ones instead of just API/alpha order.
+  // Everything else — real, allowlisted tokens only (see
+  // `isTokenAllowedInCatalog`'s doc for why "every raw Squid token on a
+  // major chain" was wrong), well-known ones first (by the curated
+  // popularity list above), alphabetical within/after that — so scrolling
+  // (or the batches useSwapTokens loads incrementally) surfaces recognizable
+  // tokens before obscure ones instead of just API/alpha order.
   const rest = raw
-    .filter((token) => MAJOR_CHAIN_IDS.has(token.chainId) && !namedKeys.has(keyOf(token.chainId, token.address)))
+    .filter(
+      (token) =>
+        MAJOR_CHAIN_IDS.has(token.chainId) &&
+        !namedKeys.has(keyOf(token.chainId, token.address)) &&
+        isTokenAllowedInCatalog(token.chainId, token.symbol),
+    )
     .sort((a, b) => {
       const rankDiff = popularityRank(a.symbol) - popularityRank(b.symbol);
       return rankDiff !== 0 ? rankDiff : a.symbol.localeCompare(b.symbol);

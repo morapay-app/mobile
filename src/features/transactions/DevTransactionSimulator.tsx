@@ -1,9 +1,21 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { swapColors, swapFonts, swapRadii } from '../swap/theme';
+import type { RootStackParamList } from '../../navigation/types';
 import { useTransactionStore } from './TransactionStoreContext';
 import { PIPELINE_STEP_ORDER } from './types';
+import { DEV_CLAIM_PREVIEW_LINK_ID, devPayPreviewLinkId, type DevPayPreviewState } from './devPreviewLinks';
+
+const DEV_PAY_PREVIEW_STATES: { state: DevPayPreviewState; label: string }[] = [
+  { state: 'ready', label: 'Ready' },
+  { state: 'already-completed', label: 'Already paid' },
+  { state: 'unsupported', label: 'Unsupported' },
+  { state: 'not-found', label: 'Not found' },
+  { state: 'error', label: 'Error' },
+];
 
 /**
  * TEMPORARY — dev-only trigger panel for the transaction tracker, so the
@@ -14,9 +26,20 @@ import { PIPELINE_STEP_ORDER } from './types';
  * real transactions. To remove: delete this file and its one import + JSX
  * line in SwapScreen.tsx.
  */
-export function DevTransactionSimulator() {
+export type DevTransactionSimulatorProps = {
+  /** Also temporary — lets SwapScreen wire up a "Preview Receipt" button
+   * without this file needing to know anything about `ReceiptData` itself.
+   * Omit to hide that button (e.g. if some future caller has no receipt to
+   * preview). */
+  onPreviewReceipt?: () => void;
+};
+
+export function DevTransactionSimulator({ onPreviewReceipt }: DevTransactionSimulatorProps = {}) {
   const { activeTransactions, startTransaction, devSetStatus, removeTransaction } = useTransactionStore();
   const [open, setOpen] = useState(false);
+  // Always called (rules of hooks) — the __DEV__ early return below still
+  // makes this whole component (nav call included) a no-op in production.
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   if (!__DEV__) return null;
 
@@ -37,6 +60,34 @@ export function DevTransactionSimulator() {
             onPress={() => startTransaction({ amount: 500, cryptoType: 'USDC', fiatType: 'GHS', durationMs: 15_000 })}
           >
             <Text style={styles.spawnButtonText}>Spawn 15s demo (auto-plays)</Text>
+          </Pressable>
+
+          {onPreviewReceipt && (
+            <Pressable testID="dev-tx-sim-preview-receipt" style={styles.spawnButton} onPress={onPreviewReceipt}>
+              <Text style={styles.spawnButtonText}>Preview Receipt</Text>
+            </Pressable>
+          )}
+
+          <Text style={styles.sectionLabel}>Preview Pay (request)</Text>
+          <View style={styles.rowButtons}>
+            {DEV_PAY_PREVIEW_STATES.map(({ state, label }) => (
+              <Pressable
+                key={state}
+                testID={`dev-tx-sim-preview-pay-${state}`}
+                style={styles.chip}
+                onPress={() => navigation.navigate('Pay', { linkId: devPayPreviewLinkId(state) })}
+              >
+                <Text style={styles.chipText}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Pressable
+            testID="dev-tx-sim-preview-claim"
+            style={styles.spawnButton}
+            onPress={() => navigation.navigate('Claim', { claimLinkId: DEV_CLAIM_PREVIEW_LINK_ID })}
+          >
+            <Text style={styles.spawnButtonText}>Preview Claim (walk the steps)</Text>
           </Pressable>
 
           <ScrollView style={styles.list}>
@@ -126,6 +177,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: swapColors.warningText,
     marginTop: -4,
+  },
+  sectionLabel: {
+    fontFamily: swapFonts.label,
+    fontSize: 11,
+    color: swapColors.textMuted,
+    marginTop: 2,
   },
   spawnButton: {
     backgroundColor: swapColors.pillActive,

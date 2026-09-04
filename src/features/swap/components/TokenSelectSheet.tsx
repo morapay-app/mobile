@@ -13,10 +13,12 @@ import {
   View,
 } from 'react-native';
 import { ArrowLeftRight, Check, Search, X } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { swapColors, swapFonts, swapRadii } from '../theme';
 import { noOutlineStyle } from '../webNoOutline';
-import { QUICK_PICK_IDS, findToken, shortenAddress, type SwapToken } from '../data/tokens';
+import { shortenAddress, type SwapToken } from '../data/tokens';
+import { getChainMeta } from '../chainMeta';
 import { TokenRowSkeleton } from './TokenRowSkeleton';
 
 export type TokenSelectSheetProps = {
@@ -42,6 +44,15 @@ const DISMISS_THRESHOLD = 120;
 // already-fetched array instead of paging a network call.
 const BATCH_SIZE = 60;
 
+// Base and Ethereum lead since that's where this app's own ramp corridor and
+// onramp/offramp traffic actually settle (see data/tokens.ts's
+// DEFAULT_FROM_TOKEN doc); Solana next as the other chain with genuinely
+// fast, cheap settlement. Everything else falls back to alphabetical — see
+// `chainOptions` below. Stellar isn't listed: this app's real catalog
+// (api/catalog.ts's MAJOR_CHAIN_IDS) has no Stellar tokens behind it today,
+// and a chip with nothing real to filter to would be misleading.
+const POPULAR_CHAIN_ORDER = ['8453', '1', 'solana-mainnet-beta', '42161', '10', '137', '56', '43114'];
+
 /**
  * Token-picker bottom sheet — the swap card's pink/cream palette and
  * hairline dividers, paired with munckins' lowercase, tight-tracked
@@ -63,6 +74,15 @@ export function TokenSelectSheet({ visible, tokens, loading = false, onClose, on
   const [query, setQuery] = useState('');
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+  // `null` means no chain filter — every chain's tokens, same as before this
+  // carousel existed.
+  const [selectedChainId, setSelectedChainId] = useState<string | null>(null);
+  // No `useSheetThemeColor` call here — see SheetShell's doc comment for
+  // why a single flat theme-color override is wrong for a sheet whose top
+  // (dark backdrop) and bottom (this sheet's own cream body) are two
+  // different real colors. `App.tsx`'s `AppRoot` sizing the app to the
+  // TRUE full screen height is what actually fixes this.
+  const insets = useSafeAreaInsets();
 
   const translateY = useRef(new Animated.Value(sheetHeight)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -80,6 +100,7 @@ export function TokenSelectSheet({ visible, tokens, loading = false, onClose, on
   useEffect(() => {
     if (visible && !wasVisible.current) {
       setQuery('');
+      setSelectedChainId(null);
       translateY.setValue(sheetHeight);
       Animated.parallel([
         Animated.spring(translateY, { toValue: 0, useNativeDriver: true, friction: 10, tension: 70 }),
@@ -114,21 +135,22 @@ export function TokenSelectSheet({ visible, tokens, loading = false, onClose, on
 
   const filteredTokens = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return tokens;
-    return tokens.filter(
-      (token) =>
-        token.symbol.toLowerCase().includes(q) ||
-        token.name.toLowerCase().includes(q) ||
-        token.chainName.toLowerCase().includes(q),
-    );
-  }, [tokens, query]);
+    return tokens.filter((token) => {
+      // Fiat rows aren't chain-scoped (see SwapToken's own doc) — the chain
+      // filter only ever narrows the crypto list below the fiat carousel,
+      // never hides fiat entirely.
+      if (selectedChainId && token.type === 'crypto' && token.chainId !== selectedChainId) return false;
+      if (!q) return true;
+      return token.symbol.toLowerCase().includes(q) || token.name.toLowerCase().includes(q) || token.chainName.toLowerCase().includes(q);
+    });
+  }, [tokens, query, selectedChainId]);
 
-  // A fresh search (or the catalog itself changing, e.g. the live fetch
-  // landing after the bootstrap set) starts back at one batch rather than
-  // keeping however far a previous scroll had grown it.
+  // A fresh search, chain filter, or the catalog itself changing (e.g. the
+  // live fetch landing after the bootstrap set) starts back at one batch
+  // rather than keeping however far a previous scroll had grown it.
   useEffect(() => {
     setVisibleCount(BATCH_SIZE);
-  }, [query, tokens]);
+  }, [query, tokens, selectedChainId]);
 
   const visibleTokens = filteredTokens.slice(0, visibleCount);
   const hasMore = visibleCount < filteredTokens.length;
@@ -136,7 +158,26 @@ export function TokenSelectSheet({ visible, tokens, loading = false, onClose, on
     if (hasMore) setVisibleCount((count) => count + BATCH_SIZE);
   };
 
-  const quickPicks = QUICK_PICK_IDS.map((id) => findToken(tokens, id)).filter((t): t is SwapToken => Boolean(t));
+  // Every chain actually present in whatever's loaded right now (bootstrap
+  // set, then the full live catalog) — never a hardcoded list that could
+  // claim a chain this catalog doesn't really back. See `POPULAR_CHAIN_ORDER`
+  // for the ordering.
+  const chainOptions = useMemo(() => {
+    const seen = new Map<string, { chainId: string; name: string; logoUri: string }>();
+    for (const token of tokens) {
+      if (token.type !== 'crypto' || seen.has(token.chainId)) continue;
+      const meta = getChainMeta(token.chainId, { chainName: token.chainName, logoUri: token.logoUri });
+      seen.set(token.chainId, { chainId: token.chainId, name: meta.name, logoUri: meta.logoUri });
+    }
+    return Array.from(seen.values()).sort((a, b) => {
+      const rankA = POPULAR_CHAIN_ORDER.indexOf(a.chainId);
+      const rankB = POPULAR_CHAIN_ORDER.indexOf(b.chainId);
+      if (rankA === -1 && rankB === -1) return a.name.localeCompare(b.name);
+      if (rankA === -1) return 1;
+      if (rankB === -1) return -1;
+      return rankA - rankB;
+    });
+  }, [tokens]);
   const fiatRails = useMemo(() => tokens.filter((token) => token.type === 'fiat'), [tokens]);
 
   const handleSelect = (token: SwapToken) => {
@@ -201,19 +242,34 @@ export function TokenSelectSheet({ visible, tokens, loading = false, onClose, on
           onEndReachedThreshold={0.4}
           ListHeaderComponent={
             <>
-              <View style={styles.quickPickRow}>
-                {quickPicks.map((token) => (
+              {chainOptions.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chainRow}
+                >
                   <Pressable
-                    key={token.id}
-                    testID={`quick-pick-${token.id}`}
-                    style={styles.quickPickItem}
-                    onPress={() => handleSelect(token)}
+                    testID="chain-pick-all"
+                    style={[styles.chainPickItem, selectedChainId === null && styles.chainPickItemActive]}
+                    onPress={() => setSelectedChainId(null)}
                   >
-                    <Image source={{ uri: token.logoUri }} style={styles.quickPickIcon} />
-                    <Text style={styles.quickPickLabel}>{token.symbol.toLowerCase()}</Text>
+                    <Text style={[styles.chainPickLabel, selectedChainId === null && styles.chainPickLabelActive]}>All chains</Text>
                   </Pressable>
-                ))}
-              </View>
+                  {chainOptions.map((chain) => (
+                    <Pressable
+                      key={chain.chainId}
+                      testID={`chain-pick-${chain.chainId}`}
+                      style={[styles.chainPickItem, selectedChainId === chain.chainId && styles.chainPickItemActive]}
+                      onPress={() => setSelectedChainId(chain.chainId)}
+                    >
+                      <Image source={{ uri: chain.logoUri }} style={styles.chainPickIcon} />
+                      <Text style={[styles.chainPickLabel, selectedChainId === chain.chainId && styles.chainPickLabelActive]}>
+                        {chain.name}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
 
               {fiatRails.length > 0 && (
                 <>
@@ -281,7 +337,7 @@ export function TokenSelectSheet({ visible, tokens, loading = false, onClose, on
               </View>
             ) : null
           }
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 24 + insets.bottom }]}
         />
       </Animated.View>
     </>
@@ -373,28 +429,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: swapColors.textMuted,
   },
-  quickPickRow: {
+  chainRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginHorizontal: 20,
+    gap: 8,
+    paddingHorizontal: 20,
     marginBottom: 18,
   },
-  quickPickItem: {
+  chainPickItem: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    width: 60,
-  },
-  quickPickIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: swapRadii.pill,
     backgroundColor: swapColors.card,
   },
-  quickPickLabel: {
+  chainPickItemActive: {
+    backgroundColor: swapColors.pillActive,
+  },
+  chainPickIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: swapColors.subcard,
+  },
+  chainPickLabel: {
     fontFamily: swapFonts.label,
-    fontSize: 12,
+    fontSize: 13,
     color: swapColors.textPrimary,
+  },
+  chainPickLabelActive: {
+    color: swapColors.textOnDark,
   },
   sectionLabel: {
     fontFamily: swapFonts.label,

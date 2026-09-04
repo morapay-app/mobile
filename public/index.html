@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <!-- viewport-fit=cover lets the page draw under the notch/home-indicator
+         safe areas instead of the browser reserving that space itself — this
+         is also what makes `env(safe-area-inset-*)` (and this app's own
+         react-native-safe-area-context, which reads the same values) report
+         anything other than 0 on iOS Safari/PWA. Without it, the edge-to-edge
+         background and the safe-area-aware sheet padding below are both
+         inert, even though the code for both already exists. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+    <!-- Mutated at runtime by src/theme/themeColor.ts (`updateThemeColor`) to
+         match a bottom sheet's dark backdrop while one is open, so the
+         system status bar/task-switcher strip doesn't sit as a mismatched
+         default-colored band above the overlay. #ffffff matches this app's
+         own default background (`swapColors.hero` in
+         src/features/swap/theme.ts) — keep the two in sync if that ever
+         changes. -->
+    <meta name="theme-color" content="#ffffff" id="theme-color-meta" />
+    <!-- iOS PWA (Add to Home Screen) chrome: runs without Safari's own
+         address bar, and lets the status bar itself blend into the page
+         (translucent) instead of forcing a fixed system color band. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>%WEB_TITLE%</title>
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height. The explicit background
+         (matching theme-color's own default above, and swapColors.hero)
+         is what actually shows through the notch/home-indicator safe-area
+         insets — that region is part of the page's own layout viewport
+         with viewport-fit=cover set, not native chrome, so it paints
+         whatever html/body's background is. src/theme/themeColor.ts
+         updates this same background at runtime to match whatever's open
+         (a dark bottom sheet, the receipt screen, ...); this is just the
+         default before any of that JS has run. */
+      html,
+      body {
+        height: 100%;
+        background-color: #ffffff;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+  </body>
+</html>

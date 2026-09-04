@@ -39,6 +39,7 @@ import { useSwapTokens } from './useSwapTokens';
 import { useWalletBalance } from './useWalletBalance';
 import { useEnsResolution } from './useEnsResolution';
 import { contactSendBlockedReason, useContactSend } from './useContactSend';
+import { ContactSendResultSheet } from './components/ContactSendResultSheet';
 import { swapAndForwardBlockedReason, useSwapAndForward } from './useSwapAndForward';
 import { coreChainCode } from './coreChain';
 import { createPaymentRequest, type CreatedPaymentRequest } from '../../api/paymentRequests';
@@ -46,6 +47,9 @@ import { buildPaymentRequestDeepLink } from '../pay/payRequestLink';
 import { ActiveTransactionPill } from '../transactions/ActiveTransactionPill';
 import { TransactionProgressSheet } from '../transactions/TransactionProgressSheet';
 import { DevTransactionSimulator } from '../transactions/DevTransactionSimulator';
+import { ReceiptModal } from '../receipt/components/ReceiptModal';
+import { explorerTxUrl } from '../receipt/receiptStatements';
+import type { ReceiptData } from '../receipt/types';
 
 const USD_LABEL = 'USD';
 const PERCENTS = [0.25, 0.5, 0.75, 1];
@@ -183,6 +187,14 @@ const HERO_MARGIN_COMPACT = 10;
 // amount card; re-tune if that card's own content ever changes.
 const DESTINATION_CARD_MIN_HEIGHT = 146;
 
+// Satisfies Core's non-empty, "@"-shaped `payer_email` requirement for a
+// send-to-contact (see useContactSend's own doc) without asking the sender
+// for a real address in the UI. Not a real inbox — for an EMAIL recipient
+// Core emails the claim code straight to THEM regardless of this value, and
+// there's no automatic channel for a PHONE recipient either way, so nothing
+// this app can display actually depends on mail delivered here.
+const PLACEHOLDER_PAYER_EMAIL = 'sender@morapay.io';
+
 export function SwapScreen() {
   const { width } = useWindowDimensions();
   const isCompact = width < COMPACT_BREAKPOINT;
@@ -201,6 +213,15 @@ export function SwapScreen() {
   const [sendExecuting, setSendExecuting] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendSuccessMessage, setSendSuccessMessage] = useState<string | null>(null);
+  // Drives ContactSendResultSheet — set once a send-to-contact actually
+  // completes, since that outcome gets its own confirmation sheet rather
+  // than the plain inline `sendSuccessMessage` line.
+  const [contactSendResult, setContactSendResult] = useState<{
+    kind: 'email' | 'phone';
+    destination: string;
+    notified: boolean;
+    confirmed: boolean;
+  } | null>(null);
   // The real settlement destination for a payment request — set by
   // ReceiveDestinationCard once it has something submittable; `null` while
   // the user hasn't finished (or the requested token has no real
@@ -237,6 +258,7 @@ export function SwapScreen() {
   const [countrySheetOpen, setCountrySheetOpen] = useState(false);
   const [walletMenuOpen, setWalletMenuOpen] = useState(false);
   const [transactionSheetOpen, setTransactionSheetOpen] = useState(false);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   // The field's own real rendered width — used to size how much of a long
   // address the truncated (blurred) display can actually fill, and how
   // many lines the field itself renders at (see `destinationCharBudget`/
@@ -709,8 +731,26 @@ export function SwapScreen() {
   const runRealSwap = async () => {
     setIsSwapping(true);
     setSwapError(null);
+    const startedAt = Date.now();
     try {
-      await swapExecution.execute({ fromToken, toToken, amount: fromTokenAmount });
+      const txHash = await swapExecution.execute({ fromToken, toToken, amount: fromTokenAmount });
+      // A real, measured duration — not a guessed/typical figure — and a
+      // real explorer link for the same chain both legs settle on (same-
+      // chain only, see this function's own doc comment above). Falls back
+      // to this app's own site only when the chain isn't one of the
+      // handful `explorerTxUrl` knows a block explorer for — still a real
+      // URL, never a fabricated one.
+      const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+      setReceiptData({
+        id: txHash.slice(2, 8).toUpperCase(),
+        type: 'SWAP',
+        status: 'SETTLED',
+        from: { amount: formatAmount(fromTokenAmount, inputDecimalsFor('token', fromToken)), symbol: fromToken.symbol },
+        to: { amount: formatAmount(toTokenAmount, inputDecimalsFor('token', toToken)), symbol: toToken.symbol },
+        timestamp: Date.now(),
+        verifyUrl: explorerTxUrl(fromToken.chainId, txHash) ?? 'https://morapay.io',
+        stats: { settlementTime: `${elapsedSeconds}s`, settlementMethod: 'ON-CHAIN' },
+      });
       setAmountSource({ side: 'from', amount: 0 });
       setPercentIndex(null);
     setQuickAmountIndex(null);
@@ -785,6 +825,11 @@ export function SwapScreen() {
     detectedDestination?.kind === 'evm' || detectedDestination?.kind === 'bitcoin' || detectedDestination?.kind === 'solana';
   const isAddressKind = isLiteralAddressKind || (isEnsKind && Boolean(ens.address));
   const isContactKind = detectedDestination?.kind === 'phone' || detectedDestination?.kind === 'email';
+  // Whether a send-to-contact is even possible for the current "from" token
+  // — see useContactSend's own doc. Checked here (not just inside
+  // runContactSend) so the button itself can go straight to a disabled
+  // "Coming soon" state instead of being enabled and bouncing an error.
+  const contactSendBlocked = isContactKind ? contactSendBlockedReason(fromToken) : null;
   const resolvedRecipientAddress = isLiteralAddressKind ? recipient.trim() : isEnsKind ? ens.address : null;
   // Something was typed, but it isn't a recognizable destination of any kind.
   // Tracked explicitly so the button can say so, instead of sitting there
@@ -864,34 +909,37 @@ export function SwapScreen() {
   // PaymentRequestDeliverySheet.
   const receiveNeedsPayout = isReceiveMode && !receivePayout;
   const sendDisabled =
-    sendReady &&
-    (fromTokenAmount === 0 ||
-      (!isReceiveMode && insufficientFunds) ||
-      (!isReceiveMode && recipient.length === 0) ||
-      (!isReceiveMode && isUnrecognizedDestination) ||
-      (!isReceiveMode && isEnsKind && !ens.address) ||
-      (!isReceiveMode && needsDestinationToken) ||
-      receiveNeedsPayout ||
-      sendExecuting);
-  const sendLabel = !sendReady
-    ? SWAP_BUTTON_LABEL['connect-wallet']
-    : sendExecuting
-      ? isReceiveMode
-        ? 'Requesting…'
-        : 'Sending…'
-      : isEnsKind && ens.loading
-        ? 'Resolving…'
-        : isUnrecognizedDestination || (isEnsKind && ens.failed)
-          ? 'Check Destination'
-          : isReceiveMode
-            ? receiveNeedsPayout
-              ? 'Add Payout Details'
-              : 'Request'
-            : insufficientFunds
-              ? SWAP_BUTTON_LABEL['insufficient-funds']
-              : needsDestinationToken
-                ? 'Choose Destination Token'
-                : 'Send';
+    (!isReceiveMode && Boolean(contactSendBlocked)) ||
+    (sendReady &&
+      (fromTokenAmount === 0 ||
+        (!isReceiveMode && insufficientFunds) ||
+        (!isReceiveMode && recipient.length === 0) ||
+        (!isReceiveMode && isUnrecognizedDestination) ||
+        (!isReceiveMode && isEnsKind && !ens.address) ||
+        (!isReceiveMode && needsDestinationToken) ||
+        receiveNeedsPayout ||
+        sendExecuting));
+  const sendLabel = !isReceiveMode && contactSendBlocked
+    ? 'Coming soon'
+    : !sendReady
+      ? SWAP_BUTTON_LABEL['connect-wallet']
+      : sendExecuting
+        ? isReceiveMode
+          ? 'Requesting…'
+          : 'Sending…'
+        : isEnsKind && ens.loading
+          ? 'Resolving…'
+          : isUnrecognizedDestination || (isEnsKind && ens.failed)
+            ? 'Check Destination'
+            : isReceiveMode
+              ? receiveNeedsPayout
+                ? 'Add Payout Details'
+                : 'Request'
+              : insufficientFunds
+                ? SWAP_BUTTON_LABEL['insufficient-funds']
+                : needsDestinationToken
+                  ? 'Choose Destination Token'
+                  : 'Send';
   const sendWarning = sendReady && !isReceiveMode && insufficientFunds;
 
   /** Clears the Send/Receive form after something actually completed. */
@@ -962,10 +1010,7 @@ export function SwapScreen() {
    * useContactSend for the three steps it actually runs). */
   const runContactSend = async () => {
     const blocked = contactSendBlockedReason(fromToken);
-    if (blocked) {
-      setSendError(blocked);
-      return;
-    }
+    if (blocked) return; // the button itself is disabled ("Coming soon") for this case
     if (!walletAddress) {
       handleConnectWallet();
       return;
@@ -984,13 +1029,10 @@ export function SwapScreen() {
         amount: fromTokenAmount,
         toAmount: fromTokenAmount,
         senderAddress: walletAddress,
+        senderEmail: PLACEHOLDER_PAYER_EMAIL,
         recipient: { kind, value: contactValue },
       });
-      setSendSuccessMessage(
-        result.confirmed
-          ? `Sent. ${contactValue} can claim it now — we've let them know.`
-          : `Sent. We're still confirming it on-chain; ${contactValue} will be able to claim shortly.`,
-      );
+      setContactSendResult({ kind, destination: contactValue, notified: result.notified, confirmed: result.confirmed });
       resetSendForm();
     } catch (err) {
       setSendError(err instanceof Error ? err.message : 'Could not send. Please try again.');
@@ -1071,7 +1113,7 @@ export function SwapScreen() {
       return;
     }
     if (isEnsKind && !ens.address) {
-      setSendError(ens.loading ? 'Still resolving that ENS name — one moment.' : "That ENS name doesn't resolve to an address.");
+      setSendError(ens.loading ? 'Still resolving that ENS name.' : "That ENS name doesn't resolve to an address.");
       return;
     }
 
@@ -1227,6 +1269,11 @@ export function SwapScreen() {
                 <FooterInfo
                   compact={isCompact}
                   loading={quoteIsPending}
+                  // Fiat<->fiat rates come from a different hook
+                  // (useFiatToFiatQuote) that has no real `expiresAt` of its
+                  // own to count down — hidden rather than showing a number
+                  // for a refresh cycle that doesn't exist.
+                  secondsUntilRefresh={isFiatToFiat ? null : swapQuote.secondsUntilExpiry}
                   primary={{
                     label: 'Exchange Rate',
                     value: `1 ${fromToken.symbol} = ${formatAmount(exchangeRate, exchangeRate < 1 ? 6 : 2)} ${toToken.symbol}`,
@@ -1304,7 +1351,13 @@ export function SwapScreen() {
                         autoCorrect={false}
                       />
                     </View>
-                    {destinationLabel && (
+                    {/* Not shown for a contact (email/phone) destination —
+                        that badge only ever repeated back what the person
+                        just typed ("Email — redeemable once claimed",
+                        "MTN.GH") without adding anything new. Still shown for
+                        an address/ENS destination, where it's the only place
+                        the detected chain/network shows up. */}
+                    {destinationLabel && !isContactKind && (
                       <View style={styles.destinationBadge}>
                         <Text style={styles.destinationBadgeText}>{destinationLabel}</Text>
                       </View>
@@ -1331,6 +1384,15 @@ export function SwapScreen() {
                         )}
                         <ChevronDown size={13} color={swapColors.textMuted} />
                       </Pressable>
+                    )}
+                    {/* Coming-soon caption for a contact destination this
+                        token can't actually pay yet — the primary button
+                        itself already reads "Coming soon" and is disabled
+                        (see `contactSendBlocked`); this just says why. */}
+                    {isContactKind && contactSendBlocked && (
+                      <Text testID="contact-send-blocked-caption" style={styles.contactSendBlockedCaption}>
+                        {contactSendBlocked}
+                      </Text>
                     )}
                   </View>
                 )}
@@ -1379,7 +1441,22 @@ export function SwapScreen() {
       </SafeAreaView>
 
       <TransactionProgressSheet visible={transactionSheetOpen} onClose={() => setTransactionSheetOpen(false)} />
-      <DevTransactionSimulator />
+      <DevTransactionSimulator
+        onPreviewReceipt={() =>
+          setReceiptData({
+            id: 'DEV0001',
+            type: 'SWAP',
+            status: 'SETTLED',
+            from: { amount: '500', symbol: 'USDC' },
+            to: { amount: '7,481.20', symbol: 'GHS' },
+            timestamp: Date.now(),
+            verifyUrl: 'https://basescan.org/tx/0xdev0000000000000000000000000000000000000000000000000000000000',
+            stats: { settlementTime: '42s', settlementMethod: 'ON-CHAIN' },
+            promo: { emoji: '🎁', text: 'Invite a merchant, earn $10 when they process their first payment.' },
+          })
+        }
+      />
+      <ReceiptModal visible={receiptData !== null} data={receiptData} onClose={() => setReceiptData(null)} />
 
       <TokenSelectSheet
         visible={pickerField !== null}
@@ -1475,6 +1552,17 @@ export function SwapScreen() {
         error={sendError}
         onSubmit={runPaymentRequest}
       />
+
+      {contactSendResult && (
+        <ContactSendResultSheet
+          visible={Boolean(contactSendResult)}
+          onClose={() => setContactSendResult(null)}
+          kind={contactSendResult.kind}
+          destination={contactSendResult.destination}
+          notified={contactSendResult.notified}
+          confirmed={contactSendResult.confirmed}
+        />
+      )}
     </>
   );
 }
@@ -1506,6 +1594,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: swapRadii.pill,
     backgroundColor: swapColors.card,
+  },
+  contactSendBlockedCaption: {
+    marginTop: 10,
+    fontFamily: swapFonts.body,
+    fontSize: 12,
+    color: swapColors.textMuted,
   },
   sendDestinationTokenIcon: {
     width: 20,

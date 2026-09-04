@@ -86,6 +86,18 @@ const CHAIN_META: Record<string, ChainMeta> = {
     protocolLabel: NATIVE_OR('SPL'),
     estimatedArrival: '~30 sec',
   },
+  // Listed for picker parity with the real web app (api/catalog.ts's own
+  // doc explains why that's safe even with no signing path yet) — this
+  // app has no Stellar wallet/extension, so nothing here ever reaches an
+  // actual send; every real execution path already refuses this chain
+  // gracefully on its own.
+  'stellar-mainnet': {
+    chainId: 'stellar-mainnet',
+    name: 'Stellar',
+    logoUri: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/stellar/info/logo.png',
+    protocolLabel: NATIVE_OR('Stellar Asset'),
+    estimatedArrival: '~5 sec',
+  },
 };
 
 /** Falls back to the token's own `chainName`/`logoUri` for a chain not in

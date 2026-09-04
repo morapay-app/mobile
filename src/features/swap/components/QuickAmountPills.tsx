@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 
 import { swapColors, swapFonts, swapRadii } from '../theme';
 
@@ -34,10 +34,21 @@ export type QuickAmountPillsProps = {
  * `isStableToken` check, "$20" always means exactly 20 of that token, no
  * live price feed required), or the "from" leg is a fiat rail with no
  * wallet involved at all (pass `currency` in that case).
+ *
+ * Scrolls horizontally rather than just laying pills out in a plain row —
+ * a currency whose quick amounts run long (`50k NGN`, for one) can make
+ * four pills wider than the space left next to `BalanceChip` in
+ * `balanceRow`. A plain `View` row has no way to shrink to fit, so it
+ * silently overflowed the card; the visible symptom was the swap card
+ * reflowing (pills briefly pushed side by side / overlapping) the instant
+ * a bottom sheet's own mount forced a layout pass, before the overflow
+ * settled back down. A horizontal `ScrollView` can never force its parent
+ * wider than the space it's given, so that reflow has nothing left to
+ * trigger it.
  */
 export function QuickAmountPills({ amounts, selected, onSelect, currency }: QuickAmountPillsProps) {
   return (
-    <View style={styles.row}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scroll} contentContainerStyle={styles.row}>
       {amounts.map((amount, index) => {
         const isActive = index === selected;
         return (
@@ -54,11 +65,26 @@ export function QuickAmountPills({ amounts, selected, onSelect, currency }: Quic
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  // `flexGrow: 0` keeps this from claiming more width than its content
+  // needs when there's room to spare (matching the old row's own "hug its
+  // pills" sizing). `flexShrink: 1` + `minWidth: 0` is what actually fixes
+  // the overflow, though: RN's default `flexShrink: 0` means a ScrollView
+  // otherwise still measures itself to its full content width like any
+  // other view, so `balanceRow` would still be forced wider than the card
+  // — it would just be a *scrollable* overflow instead of a clipped one,
+  // same reflow-on-mount symptom either way. Letting it actually shrink to
+  // whatever space is left next to `BalanceChip` is what makes the excess
+  // scroll *inside* this view instead of pushing its parent wider.
+  scroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+    minWidth: 0,
+  },
   row: {
     flexDirection: 'row',
     gap: 2,

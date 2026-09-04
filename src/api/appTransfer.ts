@@ -3,17 +3,30 @@ import { ApiError, apiPost } from './client';
 /**
  * Real "send crypto to an email or phone" execution — `POST
  * /api/public/app-transfer/intent`, which proxies Core's own
- * `/api/app-transfer/intent` (core/src/routes/api/app-transfer.ts).
+ * `/api/app-transfer/intent` (core/src/routes/api/app-transfer.ts). This is
+ * crypto-funded ONLY — confirmed live by reading the actual handler: it
+ * always validates the funding address against a real on-chain ecosystem
+ * and always returns crypto pool-deposit calldata, with no fiat/mobile-
+ * money-funded branch anywhere in it (or anywhere else in Core). Paying
+ * with mobile money to fund a send to a contact genuinely isn't possible
+ * today — see `contactSendBlockedReason` below, which is why that case is
+ * blocked rather than attempted.
  *
- * How the flow actually works there, since it isn't a direct wallet-to-
- * wallet send: naming a `recipient_email`/`recipient_phone` makes Core open
- * a SELL against the platform liquidity pool with `toType` EMAIL/NUMBER, and
- * hand back the calldata for depositing the funds INTO that pool. The
- * sender signs that deposit; Core then holds the value in custody, files a
- * payment request on behalf of the recipient, and raises a Claim the
- * recipient redeems (picking their own payout channel — wallet or fiat) via
- * the `/api/public/claims/*` routes. That's the flow documented in
- * core/md/onramp-offramp-integration.md §3.2, not an approximation of it.
+ * How the flow actually works, since it isn't a direct wallet-to-wallet
+ * send: naming a `recipient_email`/`recipient_phone` makes Core open a SELL
+ * against the platform liquidity pool with `toType` EMAIL/NUMBER, and hand
+ * back the calldata for depositing the funds INTO that pool. The sender
+ * signs that deposit and confirms it (`POST /api/public/offramp/confirm`) —
+ * but confirming the deposit does NOT by itself notify anyone or create
+ * anything claimable. A separate step, `notifyCustodialSend` below, is
+ * required to actually generate the claim code/OTP and email both parties;
+ * skipping it (confirmed live: nothing in this app called it before) means
+ * the money moves into custody with no way for the recipient to ever find
+ * out. This is Redis-backed custody (`custodial-send-notify.service.ts`),
+ * not a Postgres `Claim` row the way a payment REQUEST's claim is — but
+ * both origins are served by the same `/api/public/claims/*` routes (see
+ * `api/claims.ts`), which branch internally on which store actually has
+ * the id.
  *
  * Field names below match `IntentBodySchema` in that route exactly.
  */
@@ -92,6 +105,13 @@ export type CreateContactTransferInput = {
   /** Exactly one of these identifies the beneficiary. */
   recipientEmail?: string;
   recipientPhone?: string;
+  /** The SENDER's own email — stored on the transaction as `fromIdentifier`
+   * and required for `notifyCustodialSend` below to do anything at all
+   * (confirmed live: `notifyCustodialSellAfterDeposit` hard-fails with
+   * "Payer email is missing" without it). Nothing else in this app ever
+   * collects an email for a connect-only wallet session, so the send-to-
+   * contact form has to ask for it directly. */
+  payerEmail: string;
 };
 
 export function createContactTransferIntent(input: CreateContactTransferInput): Promise<AppTransferIntent> {
@@ -105,7 +125,23 @@ export function createContactTransferIntent(input: CreateContactTransferInput): 
     receiver_address: input.senderAddress,
     recipient_email: input.recipientEmail,
     recipient_phone: input.recipientPhone,
+    payer_email: input.payerEmail,
   });
+}
+
+/**
+ * The step that actually makes a send-to-contact reachable by its
+ * recipient — `POST /api/public/app-transfer/custodial-notify`
+ * (`notifyCustodialSellAfterDeposit` in Core), which generates the claim
+ * code + OTP + claim link, emails the payer their own copy (the code to
+ * relay to the recipient if needed), and sends the recipient theirs directly
+ * — EMAIL via `sendClaimNotification`'s email channel, PHONE via its SMS
+ * channel (added in Core; previously phone recipients got nothing — that gap
+ * is closed). Idempotent server-side — safe to call more than once for the
+ * same transaction.
+ */
+export function notifyCustodialSend(transactionId: string): Promise<{ notified: boolean }> {
+  return appTransferCall('/api/public/app-transfer/custodial-notify', { transaction_id: transactionId });
 }
 
 /**

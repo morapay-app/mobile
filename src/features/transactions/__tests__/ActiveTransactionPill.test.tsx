@@ -60,6 +60,29 @@ describe('ActiveTransactionPill', () => {
     }
   });
 
+  it('reads "Buying <fiat>" for an in-progress onramp, not "Swapping <crypto>"', async () => {
+    let store: ReturnType<typeof useTransactionStore> | undefined;
+    const { unmount } = await render(
+      <TransactionStoreProvider>
+        <Harness onReady={(s) => (store = s)} />
+      </TransactionStoreProvider>,
+    );
+
+    try {
+      await waitFor(() => expect(store?.hydrated).toBe(true));
+      await act(async () => {
+        store!.startTransaction({ amount: 500, cryptoType: 'ETH', fiatType: 'GHS', direction: 'onramp' });
+      });
+
+      await waitFor(() => {
+        const label = screen.getByTestId('active-transaction-pill-button').props.accessibilityLabel as string;
+        expect(label).toContain('Buying 500 GHS');
+      });
+    } finally {
+      unmount();
+    }
+  });
+
   it('shows a count label once more than one transaction is active', async () => {
     let store: ReturnType<typeof useTransactionStore> | undefined;
     const { unmount } = await render(

@@ -2,6 +2,36 @@ import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// The poll effect (Tier 1) fires alongside the push effect (Tier 2)
+// whenever a ramp-backed transaction exists — never called in these tests
+// (fake timers keep its 4s interval from ever actually firing), but it has
+// to resolve to *something* rather than hitting a real network call.
+const mockGetRampTransaction = jest.fn();
+jest.mock('../../../api/ramp', () => ({
+  getRampTransaction: (...args: unknown[]) => mockGetRampTransaction(...args),
+  isRampFullySettled: (transaction: { status?: string; settlementMode?: string | null; distributionStatus?: string | null }) => {
+    const status = (transaction.status ?? '').toUpperCase();
+    if (status === 'FAILED' || status === 'CANCELLED') return true;
+    if (status !== 'COMPLETED') return false;
+    const mode = (transaction.settlementMode ?? 'DIRECT').toUpperCase();
+    if (mode !== 'HUB_SWAP') return true;
+    return (transaction.distributionStatus ?? 'NONE').toUpperCase() === 'COMPLETED';
+  },
+}));
+
+// Captures the callback `TransactionStoreContext` hands to
+// `subscribeToRampStatus` so tests can simulate a real push event by just
+// calling it directly — no real Pusher socket involved.
+let capturedPushHandlers: Record<string, (event: unknown) => void> = {};
+const mockUnsubscribe = jest.fn();
+const mockSubscribeToRampStatus = jest.fn((merchantReference: string, _walletAddress: string, onStatus: (event: unknown) => void) => {
+  capturedPushHandlers[merchantReference] = onStatus;
+  return mockUnsubscribe;
+});
+jest.mock('../../../realtime/rampRealtime', () => ({
+  subscribeToRampStatus: (...args: [string, string, (event: unknown) => void]) => mockSubscribeToRampStatus(...args),
+}));
+
 import { TransactionStoreProvider, useTransactionStore, statusForElapsed } from '../TransactionStoreContext';
 
 const STORAGE_KEY = 'morapay:swap-transactions';
@@ -12,6 +42,10 @@ function wrapper({ children }: { children: ReactNode }) {
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  capturedPushHandlers = {};
+  mockSubscribeToRampStatus.mockClear();
+  mockUnsubscribe.mockClear();
+  mockGetRampTransaction.mockReset().mockResolvedValue({ status: 'PENDING' });
 });
 
 describe('statusForElapsed (the mock-polling engine)', () => {
@@ -186,6 +220,123 @@ describe('TransactionStoreContext', () => {
       expect(result.current.transactions.find((tx) => tx.id === id)).toBeUndefined();
     } finally {
       unmount();
+    }
+  });
+});
+
+describe('real-time push (Tier 2)', () => {
+  // Fake timers throughout this block — the poll effect (Tier 1) runs
+  // alongside push for the same transaction, and its real 4s/attempt
+  // interval has no business actually elapsing in a unit test. Cleaning up
+  // each transaction (via a push event, or an explicit removeTransaction)
+  // before `unmount()` matters here specifically because these tests never
+  // advance timers at all — an unresolved ramp-backed transaction's poll
+  // loop would otherwise sit forever on its first real `setTimeout`, which
+  // is harmless with fake timers but is exactly the shape of bug that hangs
+  // a real-timer run.
+  it('subscribes to the real-time channel for a ramp-backed transaction, not the wall-clock demo one', async () => {
+    jest.useFakeTimers();
+    const { result, unmount } = await renderHook(() => useTransactionStore(), { wrapper });
+    try {
+      await waitFor(() => expect(result.current.hydrated).toBe(true));
+
+      let realId = '';
+      await act(async () => {
+        realId = result.current.startTransaction({
+          amount: 25,
+          cryptoType: 'USDC',
+          fiatType: 'GHS',
+          merchantReference: 'ref-1',
+          walletAddress: '0xWALLET',
+        });
+      });
+
+      expect(mockSubscribeToRampStatus).toHaveBeenCalledWith('ref-1', '0xWALLET', expect.any(Function));
+
+      // A plain demo transaction (DevTransactionSimulator's own case) has no
+      // merchant reference — never subscribed to anything real.
+      await act(async () => {
+        result.current.startTransaction({ amount: 10, cryptoType: 'USDC', fiatType: 'GHS' });
+      });
+      expect(mockSubscribeToRampStatus).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        result.current.removeTransaction(realId);
+      });
+    } finally {
+      unmount();
+      jest.useRealTimers();
+    }
+  });
+
+  it('applies a pushed status change to the tracked transaction', async () => {
+    jest.useFakeTimers();
+    const { result, unmount } = await renderHook(() => useTransactionStore(), { wrapper });
+    try {
+      await waitFor(() => expect(result.current.hydrated).toBe(true));
+
+      let id = '';
+      await act(async () => {
+        id = result.current.startTransaction({
+          amount: 25,
+          cryptoType: 'USDC',
+          fiatType: 'GHS',
+          merchantReference: 'ref-2',
+          walletAddress: '0xWALLET',
+        });
+      });
+      expect(result.current.transactions.find((tx) => tx.id === id)?.status).toBe('ON_CHAIN_CONFIRMING');
+
+      await act(async () => {
+        capturedPushHandlers['ref-2']({
+          merchantReference: 'ref-2',
+          status: 'COMPLETED',
+          settlementMode: 'HUB_SWAP',
+          distributionStatus: 'PENDING',
+        });
+      });
+
+      expect(result.current.transactions.find((tx) => tx.id === id)?.status).toBe('MOMO_SETTLEMENT');
+      // Not yet terminal (MOMO_SETTLEMENT isn't COMPLETED/FAILED) — still
+      // real-tracked, so clean it up before unmount same as the other tests.
+      await act(async () => {
+        result.current.removeTransaction(id);
+      });
+    } finally {
+      unmount();
+      jest.useRealTimers();
+    }
+  });
+
+  it('a pushed FAILED status sets failureReason and unsubscribes', async () => {
+    jest.useFakeTimers();
+    const { result, unmount } = await renderHook(() => useTransactionStore(), { wrapper });
+    try {
+      await waitFor(() => expect(result.current.hydrated).toBe(true));
+
+      let id = '';
+      await act(async () => {
+        id = result.current.startTransaction({
+          amount: 25,
+          cryptoType: 'USDC',
+          fiatType: 'GHS',
+          merchantReference: 'ref-3',
+          walletAddress: '0xWALLET',
+        });
+      });
+
+      await act(async () => {
+        capturedPushHandlers['ref-3']({ merchantReference: 'ref-3', status: 'FAILED', errorMessage: 'Charge declined.' });
+      });
+
+      const tx = result.current.transactions.find((t) => t.id === id);
+      expect(tx?.status).toBe('FAILED');
+      expect(tx?.failureReason).toBe('Charge declined.');
+      expect(result.current.activeTransactions).toHaveLength(0);
+      expect(mockUnsubscribe).toHaveBeenCalled();
+    } finally {
+      unmount();
+      jest.useRealTimers();
     }
   });
 });

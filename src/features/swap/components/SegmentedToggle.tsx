@@ -70,6 +70,12 @@ export function SegmentedToggle({ options, value, onChange, compact = false }: S
             accessibilityRole="button"
             accessibilityState={{ selected: isActive }}
             style={[styles.segment, compact && styles.segmentCompact]}
+            // Compact segments carry no horizontal padding of their own (see
+            // segmentCompact's doc) so the first one's label sits flush with
+            // the card's left edge, matching "Sell"/the amount input below
+            // instead of reading as indented — hitSlop keeps the tap target
+            // comfortable without that visual inset.
+            hitSlop={compact ? { top: 8, bottom: 8, left: 8, right: 8 } : undefined}
             onLayout={handleSegmentLayout(index as 0 | 1)}
             onPress={() => handlePress(index as 0 | 1)}
           >
@@ -149,7 +155,12 @@ const styles = StyleSheet.create({
     // wins in the cascade and collapses this back to a zero-width box
     // (the same failure mode the old fixed-flexBasis comment described).
     flexBasis: 'auto',
-    paddingHorizontal: 8,
+    // No horizontal padding — the track's own `gap: 10` is the only
+    // spacing between "Send" and "Receive", and padding here would inset
+    // the first segment's label from the track's left edge, reading as
+    // shifted right of "Sell"/the amount input below it instead of flush
+    // with them. The Pressable's `hitSlop` (see the JSX) keeps the tap
+    // target comfortable without this visual offset.
   },
   label: {
     fontFamily: swapFonts.headingSemiBold,

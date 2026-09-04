@@ -208,13 +208,32 @@ describe('PayScreen', () => {
     expect(await screen.findByText('This request has already been paid.')).toBeTruthy();
   });
 
-  // Regression: verified live, the deployed by-link response doesn't
-  // actually include a `transactionId` field — a request object shaped
-  // like that (no transactionId, no requester-supplied one either) must
-  // not silently call calldata with nothing to query.
+  // Core's by-link response now includes a real, server-computed
+  // `payerPaysFiat` flag — this should be trusted outright instead of
+  // attempting a `calldata` call Core would refuse anyway.
+  it('shows unsupported immediately when payerPaysFiat is true, without ever calling calldata', async () => {
+    mockGetPaymentRequestByLink.mockResolvedValue({
+      ...baseRequest,
+      transaction: { ...baseRequest.transaction, payerPaysFiat: true },
+    });
+    await renderPayScreen();
+
+    expect(await screen.findByTestId('pay-unsupported')).toBeTruthy();
+    expect(screen.getByText('This request needs a fiat deposit, not a wallet transfer. That isn\'t supported in-app yet.')).toBeTruthy();
+    expect(mockGetPaymentInstruction).not.toHaveBeenCalled();
+  });
+
+  // Regression: an older deployed by-link response didn't include any
+  // transaction id at all (neither the deprecated top-level `transactionId`
+  // nor `transaction.id`, which Core's serializer now reliably sends) — a
+  // request object shaped like that (no id anywhere, no requester-supplied
+  // one either) must not silently call calldata with nothing to query.
   it('shows unsupported, not already-completed, when neither by-link nor the deep link supplies a transaction id', async () => {
     const { transactionId: _omit, ...requestWithoutTransactionId } = baseRequest;
-    mockGetPaymentRequestByLink.mockResolvedValue(requestWithoutTransactionId);
+    mockGetPaymentRequestByLink.mockResolvedValue({
+      ...requestWithoutTransactionId,
+      transaction: { ...requestWithoutTransactionId.transaction, id: undefined },
+    });
     await renderPayScreen('link-1', undefined);
 
     expect(await screen.findByTestId('pay-unsupported')).toBeTruthy();

@@ -10,10 +10,9 @@ import type { RootStackParamList } from './types';
  * under this scheme instead of an `https://` host, since there's no
  * confirmed universal-link host to register yet (see `PayScreen`'s doc).
  *
- * `Claim` is deliberately NOT listed here yet — that screen doesn't exist,
- * and a `screens` entry with no matching `Stack.Screen` component would
- * just be dead config, not a real reservation of anything. When the claim
- * screen is built, add `Claim: 'claim/:claimLinkId'` alongside it.
+ * `Claim` matches the real claim link's own path shape
+ * (`.../claim/<claimLinkId>`) the same way `Pay` mirrors `payLink` — see
+ * `features/claim/ClaimScreen.tsx`'s doc.
  */
 export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [Linking.createURL('/'), 'morapay://'],
@@ -21,6 +20,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
     screens: {
       Swap: '',
       Pay: 'pay/request/:linkId',
+      Claim: 'claim/:claimLinkId',
     },
   },
 };

@@ -3,7 +3,14 @@ import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { Blocks, ArrowLeftRight, Landmark, Check, LoaderCircle } from 'lucide-react-native';
 
 import { swapColors, swapFonts } from '../swap/theme';
-import { PIPELINE_STEP_ORDER, pipelineStepIndex, pipelineStepLabel, type PipelineStepStatus, type TransactionStatus } from './types';
+import {
+  PIPELINE_STEP_ORDER,
+  pipelineStepIndex,
+  pipelineStepLabel,
+  type PipelineStepStatus,
+  type TransactionDirection,
+  type TransactionStatus,
+} from './types';
 
 type IconComponent = typeof Blocks;
 
@@ -79,17 +86,23 @@ function StepCircle({ state, icon: Icon }: { state: StepState; icon: IconCompone
 export type TransactionStepperProps = {
   status: TransactionStatus;
   fiatType: string;
+  /** Only needed for the onramp label branch — see `pipelineStepLabel`'s
+   * own doc. */
+  cryptoType?: string;
+  direction?: TransactionDirection;
 };
 
 /**
- * Vertical 3-step pipeline: On-Chain Confirmation -> Converting to
- * {fiatType} -> Mobile Money Settlement. Only meaningful for a status still
- * in that pipeline — a terminal status has no step index (see
+ * Vertical 3-step pipeline, direction-aware (see `pipelineStepLabel`'s own
+ * doc): offramp reads On-Chain Confirmation -> Converting to {fiatType} ->
+ * Mobile Money Settlement; onramp reads Confirming Payment -> Converting to
+ * {cryptoType} -> Sending {cryptoType} to Your Wallet. Only meaningful for a
+ * status still in that pipeline — a terminal status has no step index (see
  * `pipelineStepIndex`), so this renders nothing for `COMPLETED`/`FAILED`;
  * TransactionProgressSheet shows those in its own "recent" summary instead
  * rather than through this stepper.
  */
-export function TransactionStepper({ status, fiatType }: TransactionStepperProps) {
+export function TransactionStepper({ status, fiatType, cryptoType, direction }: TransactionStepperProps) {
   const currentIndex = pipelineStepIndex(status);
   if (currentIndex < 0) return null;
 
@@ -106,7 +119,7 @@ export function TransactionStepper({ status, fiatType }: TransactionStepperProps
             </View>
             <View style={[styles.textColumn, !isLast && styles.textColumnSpaced]}>
               <Text style={[styles.stepLabel, state === 'upcoming' && styles.stepLabelUpcoming]}>
-                {pipelineStepLabel(step, fiatType)}
+                {pipelineStepLabel(step, { direction, fiatType, cryptoType })}
               </Text>
               <Text style={styles.stepSublabel}>
                 {state === 'done' ? 'Completed' : state === 'active' ? 'In progress…' : 'Up next'}
