@@ -9,7 +9,7 @@ export type PercentPillsProps = {
   onSelect: (index: number) => void;
 };
 
-/** Quick-pick row (25% / 50% / 75% / Max) matching the design board's pink pills. */
+/** Quick-pick row (25% / 50% / 75% / Max), same accent-pill treatment throughout the swap card. */
 export function PercentPills({ selected, onSelect }: PercentPillsProps) {
   return (
     <View style={styles.row}>

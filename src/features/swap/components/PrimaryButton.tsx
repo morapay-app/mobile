@@ -7,7 +7,7 @@ export type PrimaryButtonVariant = 'primary' | 'warning';
 
 export type PrimaryButtonProps = Omit<PressableProps, 'style' | 'children'> & {
   label: string;
-  /** 'warning' flags a blocked state (insufficient funds, low liquidity) — same pill, a red tint instead of pink. */
+  /** 'warning' flags a blocked state (insufficient funds, low liquidity) — same pill, a red tint instead of the brand green. */
   variant?: PrimaryButtonVariant;
   /** Shows a spinner in place of the chevron and blocks interaction, without the flat "disabled" dimming. */
   loading?: boolean;
@@ -24,7 +24,7 @@ const VARIANT_COLORS: Record<PrimaryButtonVariant, { bg: string; text: string }>
  * flow needs — connect wallet, ready, onramp/offramp, blocked (warning),
  * and pending (loading) — via `label`/`variant`/`loading` rather than
  * separate components, since they're all the same control, just relabeled.
- * The mobile-money sheet uses this same pink/cream identity too, not a
+ * The mobile-money sheet uses this same green/cream identity too, not a
  * separate one, so there's no third variant to keep in sync.
  */
 export function PrimaryButton({ label, variant = 'primary', loading = false, disabled, ...rest }: PrimaryButtonProps) {

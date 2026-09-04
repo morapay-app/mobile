@@ -27,7 +27,7 @@ export type QuickAmountPillsProps = {
 };
 
 /**
- * Same pink-pill row as PercentPills, but a fixed set of amounts instead of
+ * Same accent-pill row as PercentPills, but a fixed set of amounts instead of
  * a percentage — the useful quick-pick when there's no wallet balance to
  * take a percentage *of* yet: not connected, the "from" leg is a
  * dollar-pegged stablecoin with no balance loaded (see SwapScreen's

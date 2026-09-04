@@ -54,7 +54,7 @@ const BATCH_SIZE = 60;
 const POPULAR_CHAIN_ORDER = ['8453', '1', 'solana-mainnet-beta', '42161', '10', '137', '56', '43114'];
 
 /**
- * Token-picker bottom sheet — the swap card's pink/cream palette and
+ * Token-picker bottom sheet — the swap card's green/cream palette and
  * hairline dividers, paired with munckins' lowercase, tight-tracked
  * Manrope/Instrument Sans voice for every label (matching how munckins-web
  * sets even UI chrome in lowercase, not just marketing copy).

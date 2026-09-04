@@ -128,7 +128,7 @@ function rampErrorMessage(err: unknown, fallback: string): string {
 /**
  * Edge-to-edge bottom sheet for the fiat leg of a swap — flush to the
  * screen edges with a flat bottom, same shape and palette as the full-bleed
- * token picker (TokenSelectSheet): the swap card's own cream/pink, not a
+ * token picker (TokenSelectSheet): the swap card's own cream/green, not a
  * separate identity, so this doesn't read as a different app bolted onto
  * the swap flow. Every phase (receive, form, awaiting, success, failure)
  * renders inside the same "hero card"/pill-input treatment — a bold,
