@@ -730,8 +730,8 @@ export function MomoSheet({
     (isOfframp
       ? 'Confirming your transfer.'
       : onrampAwaitingIsBank
-        ? "Setting up your bank transfer. You'll get a real account to pay into shortly."
-        : `Approve the mobile money charge on your phone. We'll send ${toToken.symbol} once it clears.`);
+        ? 'Setting up your bank transfer.'
+        : 'Approve the mobile money charge on your phone.');
 
   // Only a step reached by moving *forward* from an earlier, still-valid
   // step can go back — 'receive'/offramp's 'form' are the first thing the
@@ -821,12 +821,6 @@ export function MomoSheet({
               </Text>
             </View>
             <PrimaryButton
-              testID="momo-cancel-keep-waiting"
-              label="Keep Waiting"
-              variant="primary"
-              onPress={() => setConfirmingClose(false)}
-            />
-            <PrimaryButton
               testID="momo-cancel-confirm"
               label="Close Anyway"
               variant="warning"
@@ -835,6 +829,16 @@ export function MomoSheet({
                 close();
               }}
             />
+            <Pressable
+              testID="momo-cancel-keep-waiting"
+              accessibilityRole="button"
+              accessibilityLabel="Keep Waiting"
+              onPress={() => setConfirmingClose(false)}
+              style={styles.keepWaitingLink}
+              hitSlop={8}
+            >
+              <Text style={styles.keepWaitingLinkText}>Keep Waiting</Text>
+            </Pressable>
           </View>
         )}
 
@@ -1186,7 +1190,7 @@ export function MomoSheet({
             </View>
             <View style={styles.depositStatusRow}>
               <ActivityIndicator size="small" color={swapColors.pillActive} />
-              <Text style={styles.statusSubtitle}>{statusMessage ?? 'Waiting for your transfer to confirm…'}</Text>
+              <Text style={styles.statusSubtitle}>{statusMessage ?? 'Confirming your transfer.'}</Text>
             </View>
           </View>
         )}
@@ -1242,6 +1246,17 @@ export function MomoSheet({
 }
 
 const styles = StyleSheet.create({
+  keepWaitingLink: {
+    alignSelf: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  keepWaitingLinkText: {
+    fontFamily: swapFonts.label,
+    fontSize: 14,
+    color: swapColors.textMuted,
+    textDecorationLine: 'underline',
+  },
   backdrop: {
     position: 'absolute',
     top: 0,

@@ -5,7 +5,13 @@ import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { swapColors, swapFonts } from '../theme';
 import { Skeleton } from './Skeleton';
 
-export type FooterInfoItem = { label: string; value: string };
+export type FooterInfoItem = {
+  label: string;
+  /** Omit (with `loading: true`) instead of a placeholder/estimated number
+   * — a skeleton is more honest than a value nobody can vouch for. */
+  value?: string;
+  loading?: boolean;
+};
 
 export type FooterInfoProps = {
   /** Always visible, collapsed or not — the exchange rate. */
@@ -51,7 +57,7 @@ export function FooterInfo({ primary, items, compact, loading, secondsUntilRefre
         loading={loading}
         secondsUntilRefresh={loading ? null : secondsUntilRefresh}
       />
-      {expanded && items.map((item) => <FooterRow key={item.label} item={item} />)}
+      {expanded && items.map((item) => <FooterRow key={item.label} item={item} loading={item.loading} />)}
     </Pressable>
   );
 }

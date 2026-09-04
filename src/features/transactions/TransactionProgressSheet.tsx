@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Check, X } from 'lucide-react-native';
 
 import { swapColors, swapFonts, swapRadii } from '../swap/theme';
@@ -7,7 +7,13 @@ import { SheetShell } from '../swap/components/SheetShell';
 import { useTransactionStore } from './TransactionStoreContext';
 import { useNow } from './useNow';
 import { TransactionStepper } from './TransactionStepper';
-import { TERMINAL_STATUSES, transactionPaySymbol, transactionReceiveSymbol, type SwapTransaction } from './types';
+import {
+  TERMINAL_STATUSES,
+  transactionPaySymbol,
+  transactionReceiveSymbol,
+  type SwapTransaction,
+  type TransactionStatus,
+} from './types';
 
 const RECENT_LIMIT = 5;
 
@@ -23,8 +29,27 @@ function formatCountdown(ms: number): string {
   return minutes > 0 ? `Expected in ${minutes}m ${seconds}s` : `Expected in ${seconds}s`;
 }
 
-function TransactionCard({ transaction, now }: { transaction: SwapTransaction; now: number }) {
+// Cancelling only ever stops THIS APP's own tracking (markFailed below) —
+// there's no real backend cancel endpoint, so it can only ever be honest
+// while nothing has actually moved yet. `ON_CHAIN_CONFIRMING` is the
+// pipeline's first step, before either leg (the swap conversion or the
+// mobile-money/wallet settlement) has started — past that, MomoSheet's own
+// cancel-confirmation dialog already says outright "this won't stop a
+// payment already in progress," so this sheet doesn't offer the option at
+// all rather than offer something that wouldn't do what it says.
+const CANCELLABLE_STATUSES: ReadonlySet<TransactionStatus> = new Set(['ON_CHAIN_CONFIRMING']);
+
+function TransactionCard({
+  transaction,
+  now,
+  onCancel,
+}: {
+  transaction: SwapTransaction;
+  now: number;
+  onCancel: (id: string) => void;
+}) {
   const remainingMs = transaction.estimatedCompletionTime - now;
+  const canCancel = CANCELLABLE_STATUSES.has(transaction.status);
   return (
     <View testID={`transaction-card-${transaction.id}`} style={styles.card}>
       <View style={styles.cardHeader}>
@@ -39,6 +64,18 @@ function TransactionCard({ transaction, now }: { transaction: SwapTransaction; n
         cryptoType={transaction.cryptoType}
         direction={transaction.direction}
       />
+      {canCancel && (
+        <Pressable
+          testID={`transaction-cancel-${transaction.id}`}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel transaction"
+          onPress={() => onCancel(transaction.id)}
+          style={styles.cancelLink}
+          hitSlop={8}
+        >
+          <Text style={styles.cancelLinkText}>Cancel Transaction</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -72,8 +109,9 @@ export type TransactionProgressSheetProps = {
  * empty state on a completely fresh install) rather than an empty sheet.
  */
 export function TransactionProgressSheet({ visible, onClose }: TransactionProgressSheetProps) {
-  const { transactions, activeTransactions } = useTransactionStore();
+  const { transactions, activeTransactions, markFailed } = useTransactionStore();
   const now = useNow(1000);
+  const handleCancel = (id: string) => markFailed(id, 'Cancelled by user');
 
   const recent = useMemo(
     () =>
@@ -98,7 +136,7 @@ export function TransactionProgressSheet({ visible, onClose }: TransactionProgre
         {hasActive ? (
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             {activeTransactions.map((tx) => (
-              <TransactionCard key={tx.id} transaction={tx} now={now} />
+              <TransactionCard key={tx.id} transaction={tx} now={now} onCancel={handleCancel} />
             ))}
           </ScrollView>
         ) : recent.length > 0 ? (
@@ -130,6 +168,15 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: 12,
     paddingBottom: 12,
+  },
+  cancelLink: {
+    alignSelf: 'center',
+  },
+  cancelLinkText: {
+    fontFamily: swapFonts.label,
+    fontSize: 12,
+    color: swapColors.textMuted,
+    textDecorationLine: 'underline',
   },
   card: {
     backgroundColor: swapColors.card,

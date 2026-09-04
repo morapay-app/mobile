@@ -1555,7 +1555,7 @@ describe('SwapScreen', () => {
       expect(button.props.accessibilityState?.disabled).toBe(true);
     });
 
-    it('surfaces a real backend quote error (e.g. a minimum-amount rejection) instead of failing silently', async () => {
+    it('blocks the swap button on a real backend quote error (e.g. a minimum-amount rejection), without showing the raw error text', async () => {
       mockSwapQuoteResult = {
         quote: { exchangeRate: '3245.67', fees: { totalFee: '0.0001' }, output: { currency: 'USDC' } },
         loading: false,
@@ -1566,8 +1566,13 @@ describe('SwapScreen', () => {
       await fireEvent.changeText(screen.getByTestId('from-amount-input'), '100'); // 1.00 USDC — a fine amount
 
       // Now the pricing engine rejects the (new) amount without the quote
-      // itself disappearing — same "keep the last good quote, surface the
-      // error" behavior useSwapQuote.test.ts covers directly.
+      // itself disappearing — same "keep the last good quote, block the
+      // button" behavior useSwapQuote.test.ts covers directly. A quote
+      // failure like this is often raw/unfriendly backend or upstream-
+      // provider text (a real one: "0x request failed: fetch failed"), so
+      // it deliberately isn't shown — only `rampLimitError` (a clean,
+      // client-computed message) ever reaches the screen; see
+      // quoteErrorDisplay's own doc in SwapScreen.tsx.
       mockSwapQuoteResult = {
         quote: { exchangeRate: '3245.67', fees: { totalFee: '0.0001' }, output: { currency: 'USDC' } },
         loading: false,
@@ -1575,26 +1580,54 @@ describe('SwapScreen', () => {
       };
       await fireEvent.changeText(screen.getByTestId('from-amount-input'), '9999999999');
 
-      expect(screen.getByText('Minimum sell amount is 50 GHS')).toBeTruthy();
+      expect(screen.queryByTestId('quote-error')).toBeNull();
       // Blocked from swapping against a rate the backend just rejected —
       // not silently allowed through with a stale/wrong quote.
       expect(screen.getByTestId('swap-cta').props.accessibilityState?.disabled).toBe(true);
     });
 
-    it('surfaces a real backend quote error for a reverse quote too (typed into "to"), instead of silently showing "0" with no explanation', async () => {
-      // Regression test: quoteErrorMessage used to be gated on
+    it('blocks the swap button for a reverse quote error too (typed into "to"), without showing the raw error text', async () => {
+      // Regression test: the disabled gate used to be keyed on
       // `fromTokenAmount > 0`, but for a reverse quote `fromTokenAmount` is
       // itself DERIVED from the quote — it's 0 exactly when the quote
-      // failed, so that gate hid the very error explaining why. Real repro:
-      // typing into "to" for a pair whose first-ever quote comes back an
-      // error leaves `fromTokenAmount` at 0 with nothing on screen saying
-      // why, which read as a silent, unexplained failure.
+      // failed, so that gate would have silently left the button enabled.
+      // Real repro: typing into "to" for a pair whose first-ever quote
+      // comes back an error leaves `fromTokenAmount` at 0.
       mockSwapQuoteResult = { quote: null, loading: false, error: 'No route found for this pair.' };
       await renderSwapScreen();
+      await connectWallet();
       await fireEvent.changeText(screen.getByTestId('to-amount-input'), '9500'); // 95.00 USDC
 
-      expect(screen.getByText('No route found for this pair.')).toBeTruthy();
+      expect(screen.queryByTestId('quote-error')).toBeNull();
       expect(screen.getByTestId('from-amount-input').props.value).toBe('0.00'); // USDC's own decimal zero (fromToken is stable by default)
+      expect(screen.getByTestId('swap-cta').props.accessibilityState?.disabled).toBe(true);
+    });
+
+    it('skeletons the other side while a later quote re-fetch is in flight, not just the very first one', async () => {
+      // Regression test: the pending state used to be `loading && !quote`,
+      // so once a quote had landed once, a later re-fetch (a changed
+      // amount, or the background auto-refresh) kept showing the OLD
+      // amount with no skeleton and no visible update at all — the typed
+      // side's own USD line updates instantly off client math, so this
+      // read as "the other value doesn't change in real time."
+      await renderSwapScreen();
+      await connectWallet();
+      // First quote lands normally.
+      await fireEvent.changeText(screen.getByTestId('from-amount-input'), '100');
+      expect(screen.getByTestId('to-amount-input')).toBeTruthy();
+      expect(screen.queryByTestId('amount-row-skeleton')).toBeNull();
+
+      // A later re-fetch — `quote` is still the PREVIOUS (non-null) one,
+      // same as useSwapQuote's own real "keep the last good quote visible
+      // while `loading`" behavior — but a fresh one is now in flight.
+      mockSwapQuoteResult = { ...mockSwapQuoteResult, loading: true };
+      await fireEvent.changeText(screen.getByTestId('from-amount-input'), '200');
+
+      expect(screen.queryByTestId('to-amount-input')).toBeNull();
+      expect(screen.getByTestId('amount-row-skeleton')).toBeTruthy();
+      // The side actually being typed into keeps showing what was typed,
+      // never a skeleton over itself.
+      expect(screen.getByTestId('from-amount-input')).toBeTruthy();
     });
 
     it('shows the real ramp minimum ("Minimum buy is 50 GHS") for an obviously-too-small onramp amount, ahead of the quote engine\'s own error', async () => {

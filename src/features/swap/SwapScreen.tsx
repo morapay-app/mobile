@@ -501,12 +501,21 @@ export function SwapScreen() {
     lastRateRef.current = quoteOutputAmount / quoteInputAmount;
   }
 
-  // True only for the very first quote of a given pair/amount — once one
-  // has resolved, a later re-fetch (typing another digit) keeps showing
-  // that stale rate while the new one loads instead of blanking out, so
-  // the skeleton isn't what's covering it then. See useSwapQuote: `quote`
-  // only clears on an ineligible pair, not on every new request.
-  const quoteIsPending = isFiatToFiat ? fiatToFiatQuote.loading && fiatToFiatQuote.rate === 0 : swapQuote.loading && !swapQuote.quote;
+  // Any real quote fetch in flight — the first one for a pair, a later
+  // re-fetch off a changed amount, or the ~25-30s background auto-refresh
+  // (see useSwapQuote's own doc). Previously scoped to only the very first
+  // fetch ever (`swapQuote.loading && !swapQuote.quote`) so a later re-fetch
+  // kept showing the OLD amount with no skeleton at all — since the typed
+  // side's own USD line updates instantly off client math while this one
+  // waits on the network, that read as "the other value doesn't update in
+  // real time" (a real bug report, not a stale-rate feature): no visible
+  // sign anything was happening, and if the new quote happened to land on
+  // the same number as before, it could look like the app never responded
+  // to the edit at all. Fiat<->fiat keeps the narrower first-fetch-only
+  // gate — that pivot table isn't debounced/re-fetched per keystroke the
+  // way a real quote is, so there's no equivalent "typing looks frozen"
+  // risk to fix.
+  const quoteIsPending = isFiatToFiat ? fiatToFiatQuote.loading && fiatToFiatQuote.rate === 0 : swapQuote.loading;
   // The side actually being typed into never shows a skeleton over itself
   // — only whichever side is waiting on the quote to fill in.
   const fromAmountIsPending = quoteIsPending && amountSource.side === 'to';
@@ -549,6 +558,16 @@ export function SwapScreen() {
       ? fiatToFiatQuote.error
       : null
     : (rampLimitError ?? (amountSource.amount > 0 ? swapQuote.error : null));
+
+  // What's actually shown on screen, as opposed to what blocks the button
+  // above. A raw quote-fetch failure (a network hiccup, an upstream
+  // DEX/bridge provider erroring out — e.g. a literal "0x request failed:
+  // fetch failed" leaking through unfiltered) tells the user nothing
+  // actionable, so it stays silent here; `quoteErrorMessage` above still
+  // requires a real quote before the swap button unblocks either way.
+  // `rampLimitError` is the one exception — always a clean, client-computed
+  // "Minimum is 50 GHS"-style message, safe and worth showing as-is.
+  const quoteErrorDisplay = isFiatToFiat ? null : rampLimitError;
 
   // The secondary "$ X.XX" line only has something real to show when one
   // side of the live rate is a USD-pegged stablecoin — that IS the trade's
@@ -1270,26 +1289,27 @@ export function SwapScreen() {
                   compact={isCompact}
                   loading={quoteIsPending}
                   // Fiat<->fiat rates come from a different hook
-                  // (useFiatToFiatQuote) that has no real `expiresAt` of its
-                  // own to count down — hidden rather than showing a number
-                  // for a refresh cycle that doesn't exist.
-                  secondsUntilRefresh={isFiatToFiat ? null : swapQuote.secondsUntilExpiry}
+                  // (useFiatToFiatQuote), which counts down its own
+                  // client-driven refresh cadence — see its own doc for why
+                  // that's not a real server-enforced expiry the way a real
+                  // swap quote's `expiresAt` is, just the same UI cadence.
+                  secondsUntilRefresh={isFiatToFiat ? fiatToFiatQuote.secondsUntilRefresh : swapQuote.secondsUntilExpiry}
                   primary={{
                     label: 'Exchange Rate',
                     value: `1 ${fromToken.symbol} = ${formatAmount(exchangeRate, exchangeRate < 1 ? 6 : 2)} ${toToken.symbol}`,
                   }}
                   items={[
-                    {
-                      label: 'Fee',
-                      value: swapQuote.quote
-                        ? `${swapQuote.quote.fees.totalFee} ${swapQuote.quote.output.currency}`
-                        : `~0.0001 ${fromToken.symbol}`,
-                    },
+                    // The backend's own fee field is always "0.00" right
+                    // now (not a real number yet, whatever the actual cost
+                    // is), and the old fallback here was an outright made-up
+                    // placeholder — a permanent skeleton is more honest than
+                    // either.
+                    { label: 'Fee', loading: true },
                   ]}
                 />
-                {quoteErrorMessage && (
+                {quoteErrorDisplay && (
                   <Text testID="quote-error" style={styles.swapErrorText}>
-                    {quoteErrorMessage}
+                    {quoteErrorDisplay}
                   </Text>
                 )}
                 {swapError && (

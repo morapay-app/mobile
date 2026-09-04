@@ -13,7 +13,7 @@ import { swapColors } from './src/features/swap/theme';
 import { SwapCardSkeleton } from './src/features/swap/components/SwapCardSkeleton';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { linking } from './src/navigation/linking';
-import { TransactionStoreProvider } from './src/features/transactions/TransactionStoreContext';
+import { TransactionStoreProvider, useTransactionStore } from './src/features/transactions/TransactionStoreContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -66,8 +66,53 @@ function AppRoot({ children, onLayout }: { children: ReactNode; onLayout?: () =>
   );
 }
 
+/**
+ * Critical-path hydration gate — blocks the real router/UI from mounting
+ * until `pendingTransactions` (TransactionStoreContext's own AsyncStorage
+ * read) has resolved, same reasoning SwapScreen.tsx already applies to the
+ * last-traded token pair (see its own `preferenceResolved` doc): a pill
+ * that pops in a few ms after first paint because its backing data was
+ * still loading reads as a real (if small) glitch, not a feature. Lives
+ * inside `TransactionStoreProvider` (not the outer `App()`) so it can read
+ * the hydration flag `useTransactionStore()` exposes.
+ */
+function HydratedApp({ fontsReady }: { fontsReady: boolean }) {
+  const { hydrated } = useTransactionStore();
+  const ready = fontsReady && hydrated;
+
+  const onLayoutRootView = useCallback(async () => {
+    if (ready) {
+      await SplashScreen.hideAsync();
+    }
+  }, [ready]);
+
+  if (!ready) {
+    // Native: the splash screen (kept up via preventAutoHideAsync above)
+    // still covers this, so it's never actually seen there. Web has no
+    // equivalent overlay, so without this the page would otherwise be a
+    // blank flash of `swapColors.hero` until fonts + hydration resolve —
+    // both are typically sub-100ms, so in practice this rarely paints at
+    // all before the real branch below takes over.
+    return (
+      <AppRoot>
+        <SwapCardSkeleton />
+      </AppRoot>
+    );
+  }
+
+  return (
+    <AppRoot onLayout={onLayoutRootView}>
+      <NavigationContainer linking={linking} fallback={<SwapCardSkeleton />}>
+        <RootNavigator />
+      </NavigationContainer>
+      <StatusBar style="dark" />
+    </AppRoot>
+  );
+}
+
 export default function App() {
   const [fontsLoaded, fontError] = useAppFonts();
+  const fontsReady = fontsLoaded || Boolean(fontError);
 
   useEffect(() => {
     if (fontError) {
@@ -76,35 +121,16 @@ export default function App() {
     }
   }, [fontError]);
 
-  const onLayoutRootView = useCallback(async () => {
-    if (fontsLoaded || fontError) {
-      await SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
-
   return (
     <DynamicRoot>
       <ErrorBoundary>
         <SafeAreaProvider>
-          {!fontsLoaded && !fontError ? (
-            // Native: the splash screen (kept up via preventAutoHideAsync
-            // above) still covers this, so it's never actually seen there.
-            // Web has no equivalent overlay, so without this the page
-            // would otherwise be a blank flash of `swapColors.hero` until
-            // the fonts resolve.
-            <AppRoot>
-              <SwapCardSkeleton />
-            </AppRoot>
-          ) : (
-            <AppRoot onLayout={onLayoutRootView}>
-              <TransactionStoreProvider>
-                <NavigationContainer linking={linking} fallback={<SwapCardSkeleton />}>
-                  <RootNavigator />
-                </NavigationContainer>
-              </TransactionStoreProvider>
-              <StatusBar style="dark" />
-            </AppRoot>
-          )}
+          {/* Mounted unconditionally (not just once fonts are ready) so its
+              own AsyncStorage read starts immediately, in parallel with
+              font loading, rather than only after fonts finish. */}
+          <TransactionStoreProvider>
+            <HydratedApp fontsReady={fontsReady} />
+          </TransactionStoreProvider>
         </SafeAreaProvider>
       </ErrorBoundary>
     </DynamicRoot>

@@ -22,6 +22,47 @@ export type UseSwapQuoteParams = {
 // input/selection change, not on an interval.
 const DEBOUNCE_MS = 400;
 
+// Same idea as the real checkout app's useTransferQuote (`staleTime` via
+// react-query) — reusing an already-fetched quote for the exact same
+// request instead of hitting the network again every time an amount comes
+// back around (retyping a previous digit, toggling between quick-amount
+// pills, etc.). Kept comfortably under the real ~30s validity window (see
+// REFRESH_LEAD_MS's own doc) so a cache hit is never an already-expired
+// quote. Module-level (not per-hook-instance) so it survives a re-render
+// or even a remount the same way react-query's cache does — the whole
+// point is "don't ask the backend something it already told us."
+const QUOTE_CACHE_TTL_MS = 20_000;
+type QuoteCacheEntry = { result: SwapQuoteResponse; fetchedAt: number };
+const quoteCache = new Map<string, QuoteCacheEntry>();
+
+/** Test-only escape hatch — this cache is module-level (deliberately, see
+ * its own doc), so without this a quote cached by one test leaks into the
+ * next one that happens to ask the same pair/amount. Not meant for use
+ * outside tests. */
+export function __clearQuoteCacheForTests(): void {
+  quoteCache.clear();
+}
+
+function quoteCacheKey(params: {
+  action: QuoteAction;
+  inputAmount: string;
+  inputCurrency: string;
+  outputCurrency: string;
+  chain: string;
+  toChain?: string;
+  inputSide: 'from' | 'to';
+}): string {
+  return [
+    params.action,
+    params.inputAmount,
+    params.inputCurrency,
+    params.outputCurrency,
+    params.chain,
+    params.toChain ?? '',
+    params.inputSide,
+  ].join('|');
+}
+
 // A quote's real, server-set validity window — `QUOTE_VALIDITY_SECONDS` in
 // core/src/services/public-quote.service.ts, confirmed live at 30s and
 // echoed back verbatim as `expiresAt` on every quote response (SwapToken's
@@ -67,6 +108,22 @@ export function useSwapQuote({ fromToken, toToken, amount, inputSide }: UseSwapQ
   // case: the main fetch effect below can't tell "the pair changed" from
   // "someone asked for a fresh one" apart, and doesn't need to.
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // Mirrors `loading` for the countdown effect below to read without
+  // depending on it directly (that would tear down and rebuild the
+  // countdown's own interval/timers on every loading flicker) — see the
+  // recovery-retry logic's own doc for why this matters: it's what stops a
+  // retry from firing while the previous one is still in flight.
+  const loadingRef = useRef(loading);
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+  // A refresh-triggered run must always hit the network — reusing the
+  // cache here would very likely just re-serve the SAME quote that's
+  // expiring in the next few seconds, defeating the entire point of
+  // refreshing early. Compared against on every run so a refresh is only
+  // ever "this run's refreshNonce differs from last run's", not a value
+  // read once.
+  const prevRefreshNonceRef = useRef(refreshNonce);
 
   const action = actionFor(fromToken, toToken);
   const cryptoChainId = fromToken.type === 'crypto' ? fromToken.chainId : toToken.chainId;
@@ -89,22 +146,54 @@ export function useSwapQuote({ fromToken, toToken, amount, inputSide }: UseSwapQ
     // rate while its own first quote is in flight.
     if (pairChanged) setQuote(null);
 
+    const isRefreshTriggered = prevRefreshNonceRef.current !== refreshNonce;
+    prevRefreshNonceRef.current = refreshNonce;
+
+    const requestParams = {
+      action,
+      inputAmount: amount.toString(),
+      inputCurrency: fromToken.symbol,
+      outputCurrency: toToken.symbol,
+      // The fiat side has no chain — always key `chain` off whichever
+      // side is actually crypto, and only pass `toChain` for a real
+      // crypto<->crypto bridge.
+      chain: cryptoChainId,
+      toChain: action === 'SWAP' ? toToken.chainId : undefined,
+      inputSide,
+    };
+
+    // Reuse an already-fetched quote for this exact request instead of
+    // hitting the network again — the previous behavior re-fetched on
+    // every single amount change, even one already seen seconds ago
+    // (retyping a digit, bouncing between quick-amount pills), which both
+    // wastes calls against a backend that already takes 6-14s per quote
+    // and piles up overlapping in-flight requests. See QUOTE_CACHE_TTL_MS's
+    // own doc for why a refresh-triggered run always skips this.
+    if (!isRefreshTriggered) {
+      const cached = quoteCache.get(quoteCacheKey(requestParams));
+      if (cached && Date.now() - cached.fetchedAt < QUOTE_CACHE_TTL_MS) {
+        requestId.current += 1; // invalidate any fetch still in flight for a different amount
+        setQuote(cached.result);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+    }
+
     const id = ++requestId.current;
     setLoading(true);
     const timer = setTimeout(() => {
-      fetchSwapQuote({
-        action,
-        inputAmount: amount.toString(),
-        inputCurrency: fromToken.symbol,
-        outputCurrency: toToken.symbol,
-        // The fiat side has no chain — always key `chain` off whichever
-        // side is actually crypto, and only pass `toChain` for a real
-        // crypto<->crypto bridge.
-        chain: cryptoChainId,
-        toChain: action === 'SWAP' ? toToken.chainId : undefined,
-        inputSide,
-      })
+      fetchSwapQuote(requestParams)
         .then((result) => {
+          // Cached even for a superseded request (the user already moved
+          // on to a different amount before this one resolved) — the fetch
+          // itself is still real, and against a backend that takes 6-14s
+          // per quote, throwing away a completed answer just because it
+          // arrived "late" relative to the current UI state means it can
+          // never end up cached at all, defeating this cache's whole
+          // purpose for exactly the amounts most likely to get revisited
+          // (the ones a user paused on before moving away from).
+          quoteCache.set(quoteCacheKey(requestParams), { result, fetchedAt: Date.now() });
           if (requestId.current !== id) return;
           setQuote(result);
           setError(null);
@@ -159,7 +248,18 @@ export function useSwapQuote({ fromToken, toToken, amount, inputSide }: UseSwapQ
     // requests, each superseding the last before it could land — the exact
     // "quote never updates" symptom this was meant to prevent, not fix.
     const RECOVERY_RETRY_FLOOR_MS = 5000;
+    // Real incident: a pair the backend genuinely can't route (BOB -> USDC
+    // on Base) kept failing every retry forever — with no cap, that meant
+    // one real request every RECOVERY_RETRY_FLOOR_MS, indefinitely, for as
+    // long as the screen stayed open. This is the hard stop: after this
+    // many failed attempts, give up automatically. The user's own next real
+    // action (retyping the amount, switching pairs) is what starts a fresh
+    // attempt — this hook has no way to distinguish "transient blip" from
+    // "this pair will never work," so it doesn't try to guess past a
+    // reasonable number of tries.
+    const MAX_RECOVERY_ATTEMPTS = 5;
     let nextRecoveryAttemptMs = expiresAtMs;
+    let recoveryAttempts = 0;
 
     const tick = () => {
       const now = Date.now();
@@ -169,8 +269,17 @@ export function useSwapQuote({ fromToken, toToken, amount, inputSide }: UseSwapQ
       // `expiresAt`, re-running this effect) well before this point — if
       // it hasn't, the last attempt was lost (a transient failure, or the
       // app was backgrounded through it) rather than left permanently
-      // stuck on a dead quote.
-      if (remainingMs <= -3000 && now >= nextRecoveryAttemptMs) {
+      // stuck on a dead quote. Never fires while a fetch (this retry or any
+      // other) is already in flight — a fixed 5s cadence with no such guard
+      // is exactly what let failed/slow attempts pile up concurrently
+      // during the BOB/USDC incident instead of staying one at a time.
+      if (
+        remainingMs <= -3000 &&
+        now >= nextRecoveryAttemptMs &&
+        !loadingRef.current &&
+        recoveryAttempts < MAX_RECOVERY_ATTEMPTS
+      ) {
+        recoveryAttempts += 1;
         nextRecoveryAttemptMs = now + RECOVERY_RETRY_FLOOR_MS;
         setRefreshNonce((n) => n + 1);
       }
@@ -186,7 +295,14 @@ export function useSwapQuote({ fromToken, toToken, amount, inputSide }: UseSwapQ
     // immediately instead — confusing, not a real safeguard).
     const MAX_REFRESH_DELAY_MS = 60_000;
     const refreshDelayMs = Math.min(MAX_REFRESH_DELAY_MS, Math.max(0, expiresAtMs - REFRESH_LEAD_MS - Date.now()));
-    const refreshTimer = setTimeout(() => setRefreshNonce((n) => n + 1), refreshDelayMs);
+    // Also skipped if something's already in flight — this is a one-shot
+    // timer (not a recurring interval like the recovery retry above), but
+    // there's no reason to let it queue a second concurrent request either
+    // if the regular debounced fetch from a keystroke just happened to
+    // still be running at this exact moment.
+    const refreshTimer = setTimeout(() => {
+      if (!loadingRef.current) setRefreshNonce((n) => n + 1);
+    }, refreshDelayMs);
 
     return () => {
       clearInterval(secondsInterval);
