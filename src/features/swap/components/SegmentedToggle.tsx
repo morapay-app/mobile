@@ -80,22 +80,32 @@ export function SegmentedToggle({ options, value, onChange, compact = false }: S
             onLayout={handleSegmentLayout(index as 0 | 1)}
             onPress={() => handlePress(index as 0 | 1)}
           >
-            {/* Keyed on active status so it remounts (and replays its
-                `from`) the moment this segment BECOMES the selected one —
-                a quick overshoot-and-settle pop layered on top of the
-                thumb's own slide, not a replacement for it. Losing active
-                status also remounts, but from===animate===1 there is a
-                no-op, so only the "becoming active" direction is visible. */}
-            <MotiView
-              key={isActive ? `${label}-active` : `${label}-inactive`}
-              from={{ scale: isActive ? 0.7 : 1 }}
-              animate={{ scale: 1 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 12 }}
-            >
-              <Text style={[styles.label, compact && styles.labelCompact, { color: isActive ? activeColor : inactiveColor }]}>
+            {compact ? (
+              // No pop here — this is the small "Send"/"Receive" toggle
+              // nested inside the amount card (see `compact`'s own doc);
+              // it reads as a plain label standing in for "Sell" (matched
+              // font/size on purpose), so a bounce on it looked out of
+              // place next to that plain, static text. The main Swap/Send
+              // toggle below still pops.
+              <Text style={[styles.label, styles.labelCompact, { color: isActive ? activeColor : inactiveColor }]}>
                 {label}
               </Text>
-            </MotiView>
+            ) : (
+              // Keyed on active status so it remounts (and replays its
+              // `from`) the moment this segment BECOMES the selected one —
+              // a quick overshoot-and-settle pop layered on top of the
+              // thumb's own slide, not a replacement for it. Losing active
+              // status also remounts, but from===animate===1 there is a
+              // no-op, so only the "becoming active" direction is visible.
+              <MotiView
+                key={isActive ? `${label}-active` : `${label}-inactive`}
+                from={{ scale: isActive ? 0.7 : 1 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 12 }}
+              >
+                <Text style={[styles.label, { color: isActive ? activeColor : inactiveColor }]}>{label}</Text>
+              </MotiView>
+            )}
           </Pressable>
         );
       })}
