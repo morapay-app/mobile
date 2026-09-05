@@ -68,8 +68,8 @@ describe('shareCaptionFor', () => {
 
   it('omits the timing clause when no settlement time is known', () => {
     const caption = shareCaptionFor(makeReceipt({ stats: undefined }));
-    expect(caption).not.toContain('@morapay_io in');
-    expect(caption).toContain('@morapay_io ⚡️');
+    expect(caption).not.toContain('@morapayglobal in');
+    expect(caption).toContain('@morapayglobal ⚡️');
   });
 });
 

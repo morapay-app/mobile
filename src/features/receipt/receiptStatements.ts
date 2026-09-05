@@ -15,63 +15,77 @@ export type ReceiptColorway = {
   textMuted: string;
 };
 
-/** One colorway per transaction type, per the spec's table — deep,
- * near-black bases (never pure black, so the neon accents don't look like
- * they're floating on a void) each paired with one signature neon. */
+// Shared across every colorway below — real Morapay brand tones, not a
+// generic dark-mode gray: `surface` is the exact teal from the live logo
+// (morapay.io/logo.png, also the landing site's own `--primary`), `bg` one
+// step darker so the ticket sits visibly on top of it. One shared
+// text pair (rather than a different tint per type, like the palette this
+// replaced) is what makes six tickets read as one family instead of six
+// unrelated designs that happen to share a layout.
+const TICKET_BG = '#02191A';
+const TICKET_SURFACE = '#023436';
+const TICKET_TEXT_PRIMARY = '#EAFBF3';
+const TICKET_TEXT_MUTED = '#6FA89A';
+
+/** One accent per transaction type — every hex here is either sampled
+ * directly from a real Morapay asset (the logo's mint-gradient glyph, the
+ * landing site's own palette) or a same-family shade of one, replacing the
+ * previous six-color neon rainbow (violet/green/yellow/pink/blue/mint) that
+ * had nothing to do with this app's actual brand. */
 const COLORWAYS: Record<TransactionType, ReceiptColorway> = {
   SWAP: {
-    bg: '#0A0A12',
-    surface: '#131320',
-    accent: '#8B5CF6',
-    accentSecondary: '#00F0FF',
-    textOnAccent: '#0A0A12',
-    textPrimary: '#F5F3FF',
-    textMuted: '#9C95C2',
+    bg: TICKET_BG,
+    surface: TICKET_SURFACE,
+    accent: '#38D690', // the logo glyph's own mint
+    accentSecondary: '#3ADB93',
+    textOnAccent: '#032018',
+    textPrimary: TICKET_TEXT_PRIMARY,
+    textMuted: TICKET_TEXT_MUTED,
   },
   OFFRAMP: {
-    bg: '#06120C',
-    surface: '#0F1F17',
-    accent: '#00FF66',
-    accentSecondary: '#0AE05C',
-    textOnAccent: '#031B0E',
-    textPrimary: '#EAFBF1',
-    textMuted: '#7FBF9B',
+    bg: TICKET_BG,
+    surface: TICKET_SURFACE,
+    accent: '#5EEAD4', // cyan-mint, same family as the portfolio card tones
+    accentSecondary: '#2DD4BF',
+    textOnAccent: '#032018',
+    textPrimary: TICKET_TEXT_PRIMARY,
+    textMuted: TICKET_TEXT_MUTED,
   },
   ONRAMP: {
-    bg: '#161206',
-    surface: '#26200D',
-    accent: '#FFD400',
-    accentSecondary: '#FFB800',
-    textOnAccent: '#1A1503',
-    textPrimary: '#FFF9E0',
-    textMuted: '#C4B679',
+    bg: TICKET_BG,
+    surface: TICKET_SURFACE,
+    accent: '#4CDB9C', // the primary button's own green
+    accentSecondary: '#38D690',
+    textOnAccent: '#032018',
+    textPrimary: TICKET_TEXT_PRIMARY,
+    textMuted: TICKET_TEXT_MUTED,
   },
   TRANSFER: {
-    bg: '#12070F',
-    surface: '#1F0E1A',
-    accent: '#FF2A85',
-    accentSecondary: '#FF6AB0',
-    textOnAccent: '#1A0511',
-    textPrimary: '#FFE9F3',
-    textMuted: '#C88AA9',
+    bg: TICKET_BG,
+    surface: TICKET_SURFACE,
+    accent: '#8EDC5C', // landing site's yellow-green mint
+    accentSecondary: '#9FE870',
+    textOnAccent: '#1A2E0A',
+    textPrimary: TICKET_TEXT_PRIMARY,
+    textMuted: TICKET_TEXT_MUTED,
   },
   PAYMENT_REQUEST: {
-    bg: '#050B16',
-    surface: '#0B1730',
-    accent: '#00B2FF',
-    accentSecondary: '#4FD1FF',
-    textOnAccent: '#03101F',
-    textPrimary: '#E6F6FF',
-    textMuted: '#7DA9C7',
+    bg: TICKET_BG,
+    surface: TICKET_SURFACE,
+    accent: '#6648FC', // landing site's brand purple — a real, deliberately
+    accentSecondary: '#8B6BFF', // distinct hue, not another shade of mint
+    textOnAccent: '#F5F3FF',
+    textPrimary: TICKET_TEXT_PRIMARY,
+    textMuted: TICKET_TEXT_MUTED,
   },
   CLAIM: {
-    bg: '#0A0714',
-    surface: '#1A1030',
-    accent: '#3DF2A0',
-    accentSecondary: '#B78CFF',
-    textOnAccent: '#06170F',
-    textPrimary: '#EFF8FF',
-    textMuted: '#9E93C4',
+    bg: TICKET_BG,
+    surface: TICKET_SURFACE,
+    accent: '#3ADB93', // the logo glyph's second gradient stop
+    accentSecondary: '#38D690',
+    textOnAccent: '#032018',
+    textPrimary: TICKET_TEXT_PRIMARY,
+    textMuted: TICKET_TEXT_MUTED,
   },
 };
 
@@ -105,11 +119,13 @@ export function statementFor(data: ReceiptData): string {
 
 /** Pre-filled caption for the Web Share API / X-intent / WhatsApp fallback
  * — same bragging-rights voice as the headline, with the real settlement
- * time folded in when this transaction actually has one. */
+ * time folded in when this transaction actually has one. Real handle
+ * (@morapayglobal, not the old @morapay_io) and global framing — Morapay
+ * isn't a West-Africa-only product. */
 export function shareCaptionFor(data: ReceiptData): string {
   const headlineAmount = `${data.to.amount} ${data.to.symbol}`;
   const timing = data.stats?.settlementTime ? ` in ${data.stats.settlementTime}` : '';
-  return `Just settled ${headlineAmount} on @morapay_io${timing} ⚡️ The fastest crypto-fiat gateway in West Africa. ${data.verifyUrl}`;
+  return `Just settled ${headlineAmount} on @morapayglobal${timing} ⚡️ The fastest crypto-fiat gateway, anywhere. ${data.verifyUrl}`;
 }
 
 /** Keyed by the same `chainId` values `chainMeta.ts`'s `CHAIN_META` table

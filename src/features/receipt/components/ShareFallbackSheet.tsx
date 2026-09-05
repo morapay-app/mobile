@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { swapColors, swapFonts, swapRadii } from '../../swap/theme';
 import { SheetShell } from '../../swap/components/SheetShell';
+import { downloadReceipt } from '../exportReceipt';
 
 export type ShareFallbackSheetProps = {
   visible: boolean;
@@ -14,6 +15,12 @@ export type ShareFallbackSheetProps = {
   /** The full bragging-rights caption (`shareCaptionFor`) — what the X and
    * WhatsApp intents pre-fill. */
   caption: string;
+  /** The already-captured receipt image, if capture succeeded — passed
+   * through to X/WhatsApp so this sheet can save it on the user's behalf
+   * (see `handleTweet`/`handleWhatsApp`'s own doc for why that's the best
+   * this can do). `null` on a capture failure; those two rows just skip
+   * the save step rather than blocking the intent over it. */
+  imageUri: string | null;
 };
 
 /**
@@ -23,7 +30,7 @@ export type ShareFallbackSheetProps = {
  * the same escape-hatch this app has no other use for yet, but it's the
  * standard, no-dependency way to hand off to a URL scheme/web intent.
  */
-export function ShareFallbackSheet({ visible, onClose, verifyUrl, caption }: ShareFallbackSheetProps) {
+export function ShareFallbackSheet({ visible, onClose, verifyUrl, caption, imageUri }: ShareFallbackSheetProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopyLink = async () => {
@@ -32,11 +39,20 @@ export function ShareFallbackSheet({ visible, onClose, verifyUrl, caption }: Sha
     setTimeout(() => setCopied(false), 1500);
   };
 
+  // Real, unavoidable platform limitation, not something to paper over: X's
+  // tweet-intent and WhatsApp's click-to-chat URLs only ever accept
+  // pre-filled text — neither has ever supported attaching an image via a
+  // URL parameter. Saving the receipt image right before handing off is the
+  // closest this can get to "share the receipt image" here — it lands in
+  // the user's downloads ready to attach, instead of leaving them to
+  // separately remember "Save Image" was even an option.
   const handleTweet = () => {
+    if (imageUri) void downloadReceipt(imageUri);
     void Linking.openURL(`https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}`);
   };
 
   const handleWhatsApp = () => {
+    if (imageUri) void downloadReceipt(imageUri);
     void Linking.openURL(`https://api.whatsapp.com/send?text=${encodeURIComponent(caption)}`);
   };
 
@@ -61,6 +77,9 @@ export function ShareFallbackSheet({ visible, onClose, verifyUrl, caption }: Sha
           label="Send on WhatsApp"
           onPress={handleWhatsApp}
         />
+        {imageUri && (
+          <Text style={styles.hint}>We'll save the receipt image so you can attach it — neither platform accepts one automatically.</Text>
+        )}
       </View>
     </SheetShell>
   );
@@ -80,6 +99,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 8,
     gap: 8,
+  },
+  hint: {
+    fontFamily: swapFonts.body,
+    fontSize: 12,
+    color: swapColors.textMuted,
+    marginTop: 4,
   },
   row: {
     flexDirection: 'row',

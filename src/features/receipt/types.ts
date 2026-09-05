@@ -38,9 +38,12 @@ export type ReceiptData = {
    * unused by the other statement patterns. */
   counterparty?: string;
   timestamp: number;
-  /** What the QR code encodes — a real block-explorer tx link when one
-   * exists (see `explorerTxUrl`), or this app's own claim/request link
-   * otherwise. Never a guessed/placeholder URL. */
+  /** What the QR code encodes, and the link in the share caption — always
+   * this app's own real web app (`https://app.morapay.io`), not a
+   * third-party block explorer: the point of a shared receipt is bringing
+   * the person who sees it back to Morapay, not sending them to Basescan.
+   * `explorerTxUrl` still exists for anywhere this app wants a real,
+   * chain-specific verification link instead, but this field isn't that. */
   verifyUrl: string;
   stats?: ReceiptStats;
   promo?: PromoConfig;

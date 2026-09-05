@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Linking } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ReceiptModal } from '../components/ReceiptModal';
@@ -17,6 +18,11 @@ const mockSetStringAsync = jest.fn();
 jest.mock('expo-clipboard', () => ({
   setStringAsync: (value: string) => mockSetStringAsync(value),
 }));
+
+// ShareFallbackSheet's X/WhatsApp rows call this for real otherwise — no
+// real URL scheme handler exists in this test environment, and the
+// unawaited rejection that follows was corrupting later tests in this file.
+jest.spyOn(Linking, 'openURL').mockResolvedValue(true as never);
 
 const testMetrics = {
   frame: { x: 0, y: 0, width: 375, height: 812 },
@@ -112,6 +118,30 @@ describe('ReceiptModal', () => {
 
     fireEvent.press(screen.getByTestId('share-fallback-copy'));
     expect(mockSetStringAsync).toHaveBeenCalledWith(DATA.verifyUrl);
+  });
+
+  // Real gap this covers: X's tweet-intent and WhatsApp's click-to-chat
+  // URLs have no way to accept an attached image — without this, "Post on
+  // X"/"Send on WhatsApp" opened the intent with text only and the receipt
+  // image was never included anywhere in the flow.
+  it('saves the receipt image before handing off to X or WhatsApp, since neither platform can accept one directly', async () => {
+    mockShareReceipt.mockResolvedValue('unsupported');
+    await renderModal();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('receipt-modal-share'));
+    });
+    await waitFor(() => expect(screen.getByTestId('share-fallback-x')).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('share-fallback-x'));
+    });
+    expect(mockDownloadReceipt).toHaveBeenCalledWith('data:image/png;base64,fake');
+
+    mockDownloadReceipt.mockClear();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('share-fallback-whatsapp'));
+    });
+    expect(mockDownloadReceipt).toHaveBeenCalledWith('data:image/png;base64,fake');
   });
 
   it('shows an inline error if capture fails, instead of failing silently', async () => {

@@ -49,8 +49,12 @@ import { ActiveTransactionPill } from '../transactions/ActiveTransactionPill';
 import { TransactionProgressSheet } from '../transactions/TransactionProgressSheet';
 import { DevTransactionSimulator } from '../transactions/DevTransactionSimulator';
 import { ReceiptModal } from '../receipt/components/ReceiptModal';
-import { explorerTxUrl } from '../receipt/receiptStatements';
 import type { ReceiptData } from '../receipt/types';
+
+// The real, live app — where a shared receipt's QR/link/caption should
+// always point (see ReceiptData.verifyUrl's own doc for why this replaced
+// a block-explorer link).
+const MORAPAY_APP_URL = 'https://app.morapay.io';
 
 const USD_LABEL = 'USD';
 const PERCENTS = [0.25, 0.5, 0.75, 1];
@@ -744,12 +748,7 @@ export function SwapScreen() {
     const startedAt = Date.now();
     try {
       const txHash = await swapExecution.execute({ fromToken, toToken, amount: fromTokenAmount });
-      // A real, measured duration — not a guessed/typical figure — and a
-      // real explorer link for the same chain both legs settle on (same-
-      // chain only, see this function's own doc comment above). Falls back
-      // to this app's own site only when the chain isn't one of the
-      // handful `explorerTxUrl` knows a block explorer for — still a real
-      // URL, never a fabricated one.
+      // A real, measured duration — not a guessed/typical figure.
       const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
       setReceiptData({
         id: txHash.slice(2, 8).toUpperCase(),
@@ -758,7 +757,11 @@ export function SwapScreen() {
         from: { amount: formatAmount(fromTokenAmount, inputDecimalsFor('token', fromToken)), symbol: fromToken.symbol },
         to: { amount: formatAmount(toTokenAmount, inputDecimalsFor('token', toToken)), symbol: toToken.symbol },
         timestamp: Date.now(),
-        verifyUrl: explorerTxUrl(fromToken.chainId, txHash) ?? 'https://morapay.io',
+        // Always the real app, not a block explorer — see ReceiptData's own
+        // doc for why (`explorerTxUrl(fromToken.chainId, txHash)` is still
+        // right there if a real per-chain verification link is ever wanted
+        // in its own, separate slot).
+        verifyUrl: MORAPAY_APP_URL,
         stats: { settlementTime: `${elapsedSeconds}s`, settlementMethod: 'ON-CHAIN' },
       });
       setAmountSource({ side: 'from', amount: 0 });
@@ -1503,7 +1506,7 @@ export function SwapScreen() {
             from: { amount: '500', symbol: 'USDC' },
             to: { amount: '7,481.20', symbol: 'GHS' },
             timestamp: Date.now(),
-            verifyUrl: 'https://basescan.org/tx/0xdev0000000000000000000000000000000000000000000000000000000000',
+            verifyUrl: MORAPAY_APP_URL,
             stats: { settlementTime: '42s', settlementMethod: 'ON-CHAIN' },
             promo: { emoji: '🎁', text: 'Invite a merchant, earn $10 when they process their first payment.' },
           })

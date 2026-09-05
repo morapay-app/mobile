@@ -34,6 +34,12 @@ export function ReceiptModal({ visible, data, onClose }: ReceiptModalProps) {
   const [busy, setBusy] = useState<'download' | 'share' | null>(null);
   const [fallbackOpen, setFallbackOpen] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  // Kept around for the fallback sheet — X's and WhatsApp's own web intents
+  // (unlike the real Web Share API / expo-sharing path below) have no way
+  // to accept an attached image at all, so that sheet needs a real image
+  // URI of its own to save on the user's behalf instead of leaving them to
+  // separately remember "Save Image" first.
+  const [captureUri, setCaptureUri] = useState<string | null>(null);
 
   const colorway = data ? colorwayFor(data.type) : null;
   useSheetThemeColor(visible, colorway?.bg ?? '#000000');
@@ -60,6 +66,7 @@ export function ReceiptModal({ visible, data, onClose }: ReceiptModalProps) {
     setBusy('share');
     try {
       const uri = await captureReceipt(ticketRef);
+      setCaptureUri(uri);
       const result = await shareReceipt(uri, caption);
       if (result === 'unsupported') setFallbackOpen(true);
     } catch {
@@ -141,7 +148,13 @@ export function ReceiptModal({ visible, data, onClose }: ReceiptModalProps) {
         </View>
       </SafeAreaView>
 
-      <ShareFallbackSheet visible={fallbackOpen} onClose={() => setFallbackOpen(false)} verifyUrl={data.verifyUrl} caption={caption} />
+      <ShareFallbackSheet
+        visible={fallbackOpen}
+        onClose={() => setFallbackOpen(false)}
+        verifyUrl={data.verifyUrl}
+        caption={caption}
+        imageUri={captureUri}
+      />
     </View>
   );
 }
