@@ -14,9 +14,10 @@ import { ApiError, apiGet, apiPost } from './client';
  *     Re-verified live after Core's `serializePublicRequestByLink` rewrite
  *     (core/src/lib/payment-request/public-request-by-link.ts): the response
  *     is now richer than before —
- *     `{ linkId, transaction: { id, t_amount, t_token, t_chain, toIdentifier,
- *     chargeAmount, chargeToken, chargeChain, settlementAmount,
- *     settlementToken, settlementChain, payerPaysFiat } | null }`.
+ *     `{ linkId, transaction: { id, t_amount, t_token, t_chain,
+ *     toIdentifierHint, chargeAmount, chargeToken, chargeChain,
+ *     settlementAmount, settlementToken, settlementChain, payerPaysFiat } |
+ *     null }`.
  *     `transaction.id` is a real transaction id whenever `transaction` isn't
  *     null (still typed optional here defensively — this endpoint has
  *     changed shape once already). `t_amount`/`t_token`/`t_chain` are kept
@@ -25,10 +26,14 @@ import { ApiError, apiGet, apiPost } from './client';
  *     right amount. `payerPaysFiat` is the one genuinely new, actionable
  *     field: a real, server-computed flag for "this request needs a fiat
  *     deposit, not a wallet transfer" — see `usePayRequest`'s own doc for
- *     how that's used to skip a doomed `calldata` call entirely. Still no
- *     `status`/`claim` on the wire, so "already paid" still can't be told
- *     from `by-link` alone — that part of the workaround (threading
- *     `transactionId` through this app's own deep link) is unchanged.
+ *     how that's used to skip a doomed `calldata` call entirely. `toIdentifierHint`
+ *     is deliberately masked server-side (e.g. "j***@domain.com") — this
+ *     endpoint has no auth guard, so Core never puts the requester's real
+ *     email/phone on the wire here at all; there is no raw version to read
+ *     client-side even by mistake. Still no `status`/`claim` on the wire, so
+ *     "already paid" still can't be told from `by-link` alone — that part of
+ *     the workaround (threading `transactionId` through this app's own deep
+ *     link) is unchanged.
  *   - `GET /api/public/requests/calldata?transaction_id=...` — the real
  *     payment instruction for that transaction (core/src/services/
  *     payment-instruction.service.ts:`buildPaymentInstructionForPoolDeposit`).
@@ -70,7 +75,9 @@ export type PayRequestTransaction = {
   t_amount: string | null;
   receiveSummary?: string | null;
   createdAt?: string;
-  toIdentifier?: string;
+  /** Masked server-side (e.g. "j***@domain.com") — see this file's own doc.
+   * Never the requester's raw email/phone; this endpoint has no auth guard. */
+  toIdentifierHint?: string;
   /** What the payer actually owes — same value as `t_amount`/`t_token`/
    * `t_chain` above (Core's serializer keeps those as literal aliases), just
    * under the name that matches its real meaning. */
@@ -92,16 +99,6 @@ export type PayRequestTransaction = {
   payerPaysFiat?: boolean;
 };
 
-export type PayRequestClaim = {
-  id: string;
-  status: string;
-  value: string;
-  token: string;
-  toIdentifier: string;
-  code: string;
-  claimLinkId: string;
-};
-
 export type PaymentRequestByLink = {
   id?: string;
   code?: string;
@@ -113,7 +110,6 @@ export type PaymentRequestByLink = {
   payoutTarget?: string | null;
   payoutFiat?: Record<string, unknown> | null;
   transaction: PayRequestTransaction;
-  claim?: PayRequestClaim;
 };
 
 /** Only this kind is completable in-app today — see this file's own doc. */

@@ -42,7 +42,7 @@ const DEV_PREVIEW_REQUEST: PaymentRequestByLink = {
     t_token: 'USDC',
     t_amount: '25',
     receiveSummary: 'For the design review lunch',
-    toIdentifier: 'ama@example.com',
+    toIdentifierHint: 'a***a@example.com',
   },
 };
 const DEV_PREVIEW_INSTRUCTION: EvmErc20TransferInstruction = {

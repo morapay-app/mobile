@@ -168,13 +168,17 @@ export function PayScreen() {
   // state.status === 'ready'
   const { instruction, request } = state;
   // `receiveSummary` and `claim` aren't present in the deployed by-link
-  // response today (see api/payRequest.ts's doc) — `transaction.toIdentifier`
+  // response today (see api/payRequest.ts's doc) — `transaction.toIdentifierHint`
   // is the one recipient field actually verified live, so it's the real
-  // fallback, not `request.claim?.toIdentifier` (which would be undefined
-  // every time right now).
+  // fallback. Deliberately never the raw identifier (Core's own
+  // `serializePublicRequestByLink` doesn't send one at all any more, and
+  // this screen shouldn't reach for `request.claim?.toIdentifier` as a
+  // workaround either — this endpoint has no auth guard, so a real
+  // email/phone here would be visible to anyone who opens the link, not
+  // just the payer it's meant for).
   const recipientLabel =
     request.transaction.receiveSummary ??
-    (request.transaction.toIdentifier ? `To ${request.transaction.toIdentifier}` : request.claim?.toIdentifier ? `To ${request.claim.toIdentifier}` : null);
+    (request.transaction.toIdentifierHint ? `To ${request.transaction.toIdentifierHint}` : null);
   const busy = paying || confirming;
   const buttonLabel = !wallet.connected
     ? 'Connect wallet to pay'

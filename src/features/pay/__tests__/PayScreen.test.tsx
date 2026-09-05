@@ -132,15 +132,6 @@ const baseRequest = {
     receiveSummary: '10.00 USDC on Base',
     createdAt: '2026-01-01T00:00:00.000Z',
   },
-  claim: {
-    id: 'claim-1',
-    status: 'ACTIVE',
-    value: '10',
-    token: 'USDC',
-    toIdentifier: 'me@example.com',
-    code: 'CLAIM12',
-    claimLinkId: 'clink-1',
-  },
 };
 
 const evmInstruction = {
@@ -258,6 +249,27 @@ describe('PayScreen', () => {
 
     expect(await screen.findByTestId('pay-unsupported')).toBeTruthy();
     expect(screen.getByText("This payment can't be completed in-app yet.")).toBeTruthy();
+  });
+
+  it('shows only the masked recipient hint, never a raw email/phone', async () => {
+    // This endpoint has no auth guard — see api/payRequest.ts's own doc —
+    // so a raw identifier here would be visible to anyone who opens the
+    // link, not just the payer. `receiveSummary` is deliberately absent so
+    // the screen actually has to fall back to `toIdentifierHint`.
+    mockGetPaymentRequestByLink.mockResolvedValue({
+      ...baseRequest,
+      transaction: {
+        ...baseRequest.transaction,
+        receiveSummary: undefined,
+        toIdentifierHint: 'r***r@example.com',
+      },
+    });
+    mockGetPaymentInstruction.mockResolvedValue(evmInstruction);
+    await renderPayScreen();
+
+    await screen.findByTestId('pay-cta');
+    expect(screen.getByText('To r***r@example.com')).toBeTruthy();
+    expect(screen.queryByText(/real\.person@example\.com/)).toBeNull();
   });
 
   it('prompts to connect a wallet when ready and disconnected', async () => {
