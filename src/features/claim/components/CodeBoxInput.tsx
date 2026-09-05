@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { swapColors, swapFonts } from '../../swap/theme';
+import { noOutlineStyle } from '../../swap/webNoOutline';
 
 export type CodeBoxInputProps = {
   /** How many characters this code has — OTP is always 6 digits, the claim
@@ -83,7 +84,7 @@ export function CodeBoxInput({ length, value, onChangeText, keyboardType = 'defa
           autoCorrect={false}
           maxLength={length} // not 1 — see the paste-handling branch above
           autoFocus={autoFocus && index === 0}
-          style={[styles.box, char.length > 0 && styles.boxFilled]}
+          style={[styles.box, char.length > 0 && styles.boxFilled, noOutlineStyle]}
         />
       ))}
     </View>

@@ -34,14 +34,28 @@ export type PaymentRequestChannel = 'EMAIL' | 'SMS' | 'WHATSAPP';
  * brand-string codes" rule the offramp payout account already follows.
  *
  * Known real gap, not something this client can paper over: Core's own
- * `payment-request-create.service.ts` hardcodes the transaction's `t_chain`
- * to "BASE"/`t_token` to "USDC" whenever the payer pays over the fiat
- * pay-link (this app's only payer flow today) — its own comment calls this
- * out as a TODO ("FX vs fiat amount"). That makes `onRequestPaymentSettled`
- * always take the crypto branch, so a `payoutFiat` destination here is
- * real, stored, and schema-correct, but won't auto-settle until that
- * backend gap closes — it currently falls back to a manual claim instead
- * of a silent failure, which is why this is still worth collecting now. */
+ * `payment-request-create.service.ts` only takes the "payer pays crypto"
+ * branch (`isSenderPaysCrypto`) when the CALLER supplies a real `f_chain`/
+ * `f_token`/`f_amount` charge leg — omit it (as this client used to,
+ * unconditionally) and Core defaults `f_chain` to the literal string
+ * `"FIAT"`, which both `GET .../calldata` and `POST .../confirm-crypto`
+ * explicitly reject with `REQUEST_EXPECTS_FIAT` (see requests.ts) since no
+ * fiat-deposit rail exists for a REQUEST today. That made every request
+ * this app created — a crypto one included — come back "can't pay in-app
+ * yet", regardless of what was actually being requested.
+ *
+ * `createPaymentRequest` below now sends a real crypto charge leg
+ * (`f_chain`/`f_token`/`f_amount` = the same chain/token/amount as
+ * `t_chain`/`t_token`/`t_amount`) whenever the requested token itself is
+ * crypto — the payer pays that token directly, which is exactly the path
+ * `buildPaymentInstructionForPoolDeposit` already builds real, working
+ * calldata for. A fiat request (GHS/NGN payout) still has nothing to put
+ * there: the payer paying crypto for a fiat request needs Core to convert
+ * a target fiat amount into a real crypto charge amount first (a genuine
+ * FX/quote step, same "TODO" its own `FIAT_BENEFICIARY_T_CHAIN`/
+ * `_T_TOKEN` comment already flags), which isn't wired up yet — so that
+ * case is left exactly as unsupported as it honestly still is, rather
+ * than guessing an amount here. */
 export type PayoutFiat = {
   type: 'nuban' | 'mobile_money';
   account_name: string;
@@ -69,6 +83,13 @@ export type CreatePaymentRequestInput = {
   /** A real, resolved bank/momo account — see the type's own doc for the
    * current auto-settlement gap. */
   payoutFiat?: PayoutFiat;
+  /** The real charge leg — what the PAYER sends. Set this (to the same
+   * chain/token/amount as what's being requested) whenever that's crypto,
+   * so Core's `isSenderPaysCrypto` branch fires and the request is actually
+   * payable in-app. Omit for a fiat request — see this file's own doc. */
+  chargeChain?: string;
+  chargeToken?: string;
+  chargeAmount?: string;
   /** Stores the request with a real payer contact but skips actually
    * messaging them — for the "generate a QR/link, I'll share it myself"
    * delivery option (PaymentRequestDeliverySheet). Core still requires a
@@ -114,6 +135,9 @@ export async function createPaymentRequest(input: CreatePaymentRequestInput): Pr
       receiveSummary: input.receiveSummary,
       payoutTarget: input.payoutTarget,
       payoutFiat: input.payoutFiat,
+      f_chain: input.chargeChain,
+      f_token: input.chargeToken,
+      f_amount: input.chargeAmount,
       skipPaymentRequestNotification: input.skipPaymentRequestNotification,
     });
   } catch (err) {

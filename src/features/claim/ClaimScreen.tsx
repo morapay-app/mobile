@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AlertTriangle, PartyPopper, SearchX } from 'lucide-react-native';
 
 import { swapColors, swapFonts, swapRadii } from '../swap/theme';
+import { noOutlineStyle } from '../swap/webNoOutline';
 import { PrimaryButton } from '../swap/components/PrimaryButton';
 import { SwapCardSkeleton } from '../swap/components/SwapCardSkeleton';
 import { useWallet } from '../../dynamic/useWallet';
@@ -126,7 +127,7 @@ export function ClaimScreen() {
             placeholderTextColor={swapColors.textMuted}
             autoCapitalize="none"
             keyboardType="email-address"
-            style={styles.input}
+            style={[styles.input, noOutlineStyle]}
           />
           {state.error && (
             <Text testID="claim-recipient-error" style={styles.warning}>
@@ -261,7 +262,7 @@ export function ClaimScreen() {
           placeholder={wallet.address ?? '0x… destination wallet address'}
           placeholderTextColor={swapColors.textMuted}
           autoCapitalize="none"
-          style={styles.input}
+          style={[styles.input, noOutlineStyle]}
         />
 
         {state.error && (

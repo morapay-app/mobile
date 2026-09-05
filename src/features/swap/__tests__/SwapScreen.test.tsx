@@ -904,6 +904,30 @@ describe('SwapScreen', () => {
       expect(screen.getByTestId('send-cta').props.accessibilityState?.disabled).toBe(false);
     });
 
+    it('lets a disconnected user request crypto to a typed address, with no wallet-connect prompt at all', async () => {
+      await renderSwapScreen();
+      // Deliberately no connectWallet() — requesting crypto to an address
+      // you just typed never spends from a connected wallet, so this
+      // shouldn't need one either (see SwapScreen.tsx's own `sendReady`
+      // doc for the real bug this covers: it used to fall back to
+      // "Connect Wallet" here for no reason).
+      await fireEvent.press(screen.getByRole('button', { name: 'Send', selected: false }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Receive', selected: false }));
+      await fireEvent.changeText(screen.getByTestId('from-amount-input'), '1000');
+
+      expect(screen.getByTestId('send-cta').props.accessibilityLabel).toBe('Add Payout Details');
+
+      await fireEvent.changeText(screen.getByTestId('receive-address-input'), '0x1234567890123456789012345678901234567890');
+
+      expect(screen.getByTestId('send-cta').props.accessibilityLabel).toBe('Request');
+      expect(screen.getByTestId('send-cta').props.accessibilityState?.disabled).toBe(false);
+
+      await fireEvent.press(screen.getByTestId('send-cta'));
+
+      expect(mockDynamicUiAuthShow).not.toHaveBeenCalled();
+      expect(screen.getByTestId('payment-request-delivery-sheet')).toBeTruthy();
+    });
+
     it('receive mode never blocks on insufficient funds', async () => {
       await renderSwapScreen();
       await connectWallet();
@@ -1181,6 +1205,14 @@ describe('SwapScreen', () => {
         receiveSummary: '10.00 USDC on Ethereum',
         channels: ['EMAIL'],
         payoutTarget: '0x1234567890123456789012345678901234567890',
+        // The real charge leg — requesting crypto means the payer pays
+        // that same token directly (see api/paymentRequests.ts's own doc
+        // for the real bug this covers: omitting this made Core default
+        // the charge to a literal "FIAT" leg, which is what made every
+        // request — a crypto one included — come back unpayable in-app).
+        chargeChain: 'ETHEREUM',
+        chargeToken: 'USDC',
+        chargeAmount: '10',
         payoutFiat: undefined,
         skipPaymentRequestNotification: false,
       });

@@ -930,7 +930,14 @@ export function SwapScreen() {
   // wallet — same reasoning as the swap card's onramp: nothing to connect
   // just to send it.
   const sendPayingWithFiat = fromToken.type === 'fiat';
-  const sendReady = walletConnected || sendPayingWithFiat;
+  // Receive mode never spends from a connected wallet either way (see
+  // `isReceiveMode`'s own doc) — for a crypto request specifically, the
+  // payout is just whatever address was typed into ReceiveDestinationCard,
+  // connected or not (that card's own "Connect Wallet" pill is only a
+  // convenience autofill for the field, never a requirement). Gating this
+  // button on `walletConnected` too meant a real, already-typed address
+  // couldn't submit without connecting a wallet for no reason.
+  const sendReady = isReceiveMode || walletConnected || sendPayingWithFiat;
   // A crypto-to-address send additionally needs its destination token
   // picked before there's anything real to submit.
   const needsDestinationToken = !isReceiveMode && isAddressKind && !sendDestinationToken;
@@ -1022,6 +1029,15 @@ export function SwapScreen() {
         channels: skipNotify ? [] : payerIsEmail ? ['EMAIL'] : ['SMS'],
         payoutTarget: receivePayout.kind === 'crypto' ? receivePayout.address : undefined,
         payoutFiat: receivePayout.kind === 'fiat' ? receivePayout.payoutFiat : undefined,
+        // The real charge leg — see api/paymentRequests.ts's own doc for
+        // why omitting this (as this call used to) made every request
+        // unpayable in-app. Requesting crypto means the payer pays that
+        // same token directly; a fiat request has no crypto charge amount
+        // to send yet (Core doesn't compute one), so it's left unset and
+        // still honestly reported as unsupported.
+        chargeChain: fromToken.type === 'crypto' ? chainCode : undefined,
+        chargeToken: fromToken.type === 'crypto' ? fromToken.symbol : undefined,
+        chargeAmount: fromToken.type === 'crypto' ? fromTokenAmount.toString() : undefined,
         skipPaymentRequestNotification: skipNotify,
       });
       setPaymentRequest(created);
