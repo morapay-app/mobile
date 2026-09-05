@@ -778,7 +778,6 @@ describe('MomoSheet', () => {
       });
 
       expect(screen.getByTestId('momo-receive-address-input').props.value).toBe(WALLET_ADDRESS);
-      expect(screen.getByText(/Connected wallet/)).toBeTruthy();
       expect(screen.getByTestId('momo-receive-continue').props.accessibilityState?.disabled).toBe(false);
 
       await fireEvent.press(screen.getByTestId('momo-receive-continue'));
@@ -800,6 +799,47 @@ describe('MomoSheet', () => {
       await fireEvent.press(screen.getByTestId('momo-receive-wallet-chip'));
       expect(screen.getByTestId('momo-receive-address-input').props.value).toBe(WALLET_ADDRESS);
       expect(screen.getByTestId('momo-receive-continue').props.accessibilityState?.disabled).toBe(false);
+    });
+
+    // Real bug: the auto-fill effect used to re-run on every keystroke
+    // (keyed off the address itself, not the wallet-connect transition), so
+    // clearing the field snapped the wallet address right back in — there
+    // was no way to actually delete it once a wallet was connected.
+    it('lets a connected-wallet user actually clear the field, instead of snapping the wallet address right back in', async () => {
+      await renderSheet({
+        direction: 'onramp',
+        fromToken: GHS,
+        toToken: ETH,
+        walletConnected: true,
+        walletAddress: WALLET_ADDRESS,
+      });
+
+      expect(screen.getByTestId('momo-receive-address-input').props.value).toBe(WALLET_ADDRESS);
+
+      await fireEvent.changeText(screen.getByTestId('momo-receive-address-input'), '');
+      expect(screen.getByTestId('momo-receive-address-input').props.value).toBe('');
+      expect(screen.getByTestId('momo-receive-continue').props.accessibilityState?.disabled).toBe(true);
+    });
+
+    // Real bug: the wallet chip only ever set the address, never cleared
+    // it — pressing it a second time while it already showed the connected
+    // wallet was a no-op, leaving no way to back out of it via the chip.
+    it('toggles the connected wallet address off when the chip is pressed again', async () => {
+      await renderSheet({
+        direction: 'onramp',
+        fromToken: GHS,
+        toToken: ETH,
+        walletConnected: true,
+        walletAddress: WALLET_ADDRESS,
+      });
+
+      expect(screen.getByTestId('momo-receive-address-input').props.value).toBe(WALLET_ADDRESS);
+
+      await fireEvent.press(screen.getByTestId('momo-receive-wallet-chip'));
+      expect(screen.getByTestId('momo-receive-address-input').props.value).toBe('');
+
+      await fireEvent.press(screen.getByTestId('momo-receive-wallet-chip'));
+      expect(screen.getByTestId('momo-receive-address-input').props.value).toBe(WALLET_ADDRESS);
     });
 
     it('shows the fixed destination network, and re-picking one from the network sheet changes the target token', async () => {

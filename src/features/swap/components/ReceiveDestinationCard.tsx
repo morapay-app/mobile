@@ -146,12 +146,16 @@ export function ReceiveDestinationCard({ token, walletConnected, walletAddress, 
     }
   };
 
+  // Toggles the connected address in/out — see MomoSheet.tsx's
+  // `handleAddressIconPress` for the same fix and why it matters: this used
+  // to only ever set the address, so once connected there was no way to
+  // clear the field back to blank except retyping over it by hand.
   const handleUseWallet = () => {
-    if (walletConnected && walletAddress) {
-      setAddress(walletAddress);
-    } else {
+    if (!walletConnected || !walletAddress) {
       onConnectWallet();
+      return;
     }
+    setAddress((current) => (current.trim() === walletAddress ? '' : walletAddress));
   };
 
   if (isCrypto) {

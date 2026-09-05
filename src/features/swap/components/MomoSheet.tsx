@@ -274,13 +274,24 @@ export function MomoSheet({
 
   // If the user opened this without a wallet, then connects one from inside
   // the receive step (Dynamic's own connect UI, outside this component
-  // tree), fill the address in automatically — but only if the field is
-  // still empty, so connecting doesn't clobber something already typed.
+  // tree), fill the address in automatically — but only on that actual
+  // connect transition, and only if the field is still empty right then.
+  //
+  // Real bug this replaces: the old version re-ran on every `receiveAddress`
+  // change (it was in the dependency array), so it wasn't just "fill in on
+  // connect" — it kept re-filling the wallet address back in ANY time the
+  // field went empty, including the user deliberately deleting it to type
+  // something else. There was no way to actually clear the field once a
+  // wallet was connected. Keying off a "was connected" ref instead of the
+  // address itself means this only ever fires once, on the real transition.
+  const wasWalletConnectedRef = useRef(walletConnected);
   useEffect(() => {
-    if (phase === 'receive' && walletConnected && walletAddress && receiveAddress.trim().length === 0) {
-      setReceiveAddress(walletAddress);
+    const justConnected = walletConnected && !wasWalletConnectedRef.current;
+    wasWalletConnectedRef.current = walletConnected;
+    if (phase === 'receive' && justConnected && walletAddress) {
+      setReceiveAddress((current) => (current.trim().length === 0 ? walletAddress : current));
     }
-  }, [walletConnected, walletAddress, phase, receiveAddress]);
+  }, [walletConnected, walletAddress, phase]);
 
   // Real, previously-used addresses for THIS chain only (see
   // addressHistory.ts's doc — never shown for a different chain, even one
@@ -369,16 +380,26 @@ export function MomoSheet({
   const receiveAddressValid = Boolean(receiveAddressKind && CRYPTO_ADDRESS_KINDS.has(receiveAddressKind));
   const resolvedReceiveAddress = receiveAddressValid ? receiveAddress.trim() : null;
   const canContinueReceive = Boolean(resolvedReceiveAddress);
+  // Whether the field currently holds the connected wallet's own address —
+  // drives the Paste/Connected-Wallet pills' color (see their own styles):
+  // black while the connected wallet is actually the thing in use, the same
+  // pale chain-container tone as the network pill above them otherwise, so
+  // the row doesn't read as "wallet selected" when it isn't.
+  const usingConnectedWallet = Boolean(walletConnected && walletAddress && receiveAddress.trim() === walletAddress);
 
   // One icon, two jobs depending on wallet state: already connected, it
-  // pastes that address back in (handy after editing it away); not yet
-  // connected, it starts the real connect flow instead.
+  // toggles the connected address in/out (handy after editing it away, and
+  // a real way to clear it again — see this function's own history: it used
+  // to only ever set the address, never clear it, so once you'd used the
+  // connected wallet there was no way back to a blank field except typing
+  // over it character by character); not yet connected, it starts the real
+  // connect flow instead.
   const handleAddressIconPress = () => {
-    if (walletConnected && walletAddress) {
-      setReceiveAddress(walletAddress);
-    } else {
+    if (!walletConnected || !walletAddress) {
       onConnectWallet();
+      return;
     }
+    setReceiveAddress((current) => (current.trim() === walletAddress ? '' : walletAddress));
   };
 
   const handlePasteAddress = async () => {
@@ -849,17 +870,47 @@ export function MomoSheet({
                 (a soft card, a transparent input sitting directly on it,
                 nothing boxed separately inside). */}
             <View style={styles.heroCard}>
-              <Pressable
-                testID="momo-network-pill"
-                accessibilityRole="button"
-                accessibilityLabel={`Network: ${currentNetworkMeta.name}`}
-                onPress={() => setNetworkSheetOpen(true)}
-                style={styles.networkPill}
-              >
-                <Image source={{ uri: currentNetworkMeta.logoUri }} style={styles.networkPillIcon} />
-                <Text style={styles.networkPillLabel}>{currentNetworkMeta.name}</Text>
-                <ChevronDown size={13} color={swapColors.textMuted} />
-              </Pressable>
+              <View style={styles.heroCardTopRow}>
+                <Pressable
+                  testID="momo-network-pill"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Network: ${currentNetworkMeta.name}`}
+                  onPress={() => setNetworkSheetOpen(true)}
+                  style={styles.networkPill}
+                >
+                  <Image source={{ uri: currentNetworkMeta.logoUri }} style={styles.networkPillIcon} />
+                  <Text style={styles.networkPillLabel}>{currentNetworkMeta.name}</Text>
+                  <ChevronDown size={13} color={swapColors.textMuted} />
+                </Pressable>
+
+                {/* Icon-only, opposite the network chip — same two real
+                    actions as before (Paste, use the connected wallet), just
+                    a quieter treatment than a labeled pill row under the
+                    input. The wallet icon tints to show whether its address
+                    is the one currently in the field. */}
+                <View style={styles.addressIconRow}>
+                  <Pressable
+                    testID="momo-receive-paste"
+                    accessibilityRole="button"
+                    accessibilityLabel="Paste address"
+                    onPress={handlePasteAddress}
+                    hitSlop={8}
+                    style={styles.addressIconButton}
+                  >
+                    <ClipboardPaste size={16} color={swapColors.textMuted} />
+                  </Pressable>
+                  <Pressable
+                    testID="momo-receive-wallet-chip"
+                    accessibilityRole="button"
+                    accessibilityLabel={walletConnected ? 'Use connected wallet address' : 'Connect wallet'}
+                    onPress={handleAddressIconPress}
+                    hitSlop={8}
+                    style={styles.addressIconButton}
+                  >
+                    <Wallet size={16} color={usingConnectedWallet ? swapColors.textPrimary : swapColors.textMuted} />
+                  </Pressable>
+                </View>
+              </View>
 
               <TextInput
                 testID="momo-receive-address-input"
@@ -873,35 +924,7 @@ export function MomoSheet({
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-
-              {/* Address Book and Scan aren't real features yet — Paste and
-                  the connected wallet are the two that actually work today. */}
-              <View style={styles.addressActionRow}>
-                <Pressable
-                  testID="momo-receive-paste"
-                  accessibilityRole="button"
-                  accessibilityLabel="Paste address"
-                  onPress={handlePasteAddress}
-                  style={styles.addressActionPill}
-                >
-                  <ClipboardPaste size={13} color={swapColors.textOnDark} />
-                  <Text style={styles.addressActionLabel}>Paste</Text>
-                </Pressable>
-                <Pressable
-                  testID="momo-receive-wallet-chip"
-                  accessibilityRole="button"
-                  accessibilityLabel={walletConnected ? 'Use connected wallet address' : 'Connect wallet'}
-                  onPress={handleAddressIconPress}
-                  style={styles.addressActionPill}
-                >
-                  <Wallet size={13} color={swapColors.textOnDark} />
-                  <Text style={styles.addressActionLabel}>{walletConnected ? 'Connected Wallet' : 'Connect Wallet'}</Text>
-                </Pressable>
-              </View>
             </View>
-            {walletConnected && walletAddress && (
-              <Text style={styles.addressHint}>Connected wallet: {shortenAddress(walletAddress) ?? walletAddress}</Text>
-            )}
 
             {recentAddresses.length > 0 && (
               <View style={styles.field}>
@@ -1380,11 +1403,13 @@ const styles = StyleSheet.create({
   manualNameLoading: {
     marginLeft: 8,
   },
-  addressHint: {
-    fontFamily: swapFonts.body,
-    fontSize: 12,
-    color: swapColors.textMuted,
-    paddingHorizontal: 4,
+  // Network chip + the Paste/wallet icon buttons, opposite ends of one row
+  // — a quieter alternative to the labeled-pill row this replaced (see
+  // `addressIconRow`'s own doc).
+  heroCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   // "Select Network" pill, matching the reference design's own network
   // affordance at the top of the receive step — display-only here (the
@@ -1395,7 +1420,6 @@ const styles = StyleSheet.create({
   networkPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -1431,25 +1455,20 @@ const styles = StyleSheet.create({
   },
   // Paste / Connected Wallet — the two real actions here (Address Book and
   // Scan aren't wired to anything real yet, so they aren't offered at all
-  // rather than shown disabled). Small, content-sized pills sitting inside
-  // the same card as the address input, not full-width chips of their own.
-  addressActionRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  addressActionPill: {
+  // rather than shown disabled). Plain icon buttons opposite the network
+  // chip, not a labeled pill row under the input — a deliberately quieter
+  // treatment once there was already a chip-shaped control on the same
+  // line to balance against.
+  addressIconRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: swapRadii.pill,
-    backgroundColor: swapColors.toggleTrack,
+    gap: 4,
   },
-  addressActionLabel: {
-    fontFamily: swapFonts.label,
-    fontSize: 13,
-    color: swapColors.textOnDark,
+  addressIconButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Full-width rows (not content-sized chips) — each one's own text is
   // truncated to fill exactly this width (see RECENT_ADDRESS_FONT_SIZE /

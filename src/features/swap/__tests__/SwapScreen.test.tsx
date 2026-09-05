@@ -904,6 +904,27 @@ describe('SwapScreen', () => {
       expect(screen.getByTestId('send-cta').props.accessibilityState?.disabled).toBe(false);
     });
 
+    it('toggles the connected wallet address in and out of the receive-address field, instead of only ever filling it in', async () => {
+      // Real bug: pressing "Connected Wallet" only ever set the address —
+      // pressing it again (or clearing the field) with a wallet connected
+      // left no way to get back to a blank field to type something else.
+      await renderSwapScreen();
+      await connectWallet();
+      await fireEvent.press(screen.getByRole('button', { name: 'Send', selected: false }));
+      await fireEvent.changeText(screen.getByTestId('from-amount-input'), '1');
+      await fireEvent.press(screen.getByRole('button', { name: 'Receive', selected: false }));
+
+      await fireEvent.press(screen.getByTestId('receive-use-wallet'));
+      const walletAddress = screen.getByTestId('receive-address-input').props.value;
+      expect(walletAddress).toMatch(/^0x/);
+
+      await fireEvent.press(screen.getByTestId('receive-use-wallet'));
+      expect(screen.getByTestId('receive-address-input').props.value).toBe('');
+
+      await fireEvent.press(screen.getByTestId('receive-use-wallet'));
+      expect(screen.getByTestId('receive-address-input').props.value).toBe(walletAddress);
+    });
+
     it('lets a disconnected user request crypto to a typed address, with no wallet-connect prompt at all', async () => {
       await renderSwapScreen();
       // Deliberately no connectWallet() — requesting crypto to an address
