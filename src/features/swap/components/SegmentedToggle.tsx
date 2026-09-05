@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { Animated, Pressable, StyleSheet, View, Text, LayoutChangeEvent } from 'react-native';
+import { MotiView } from 'moti';
 
 import { swapColors, swapFonts, swapRadii } from '../theme';
 
@@ -79,9 +80,22 @@ export function SegmentedToggle({ options, value, onChange, compact = false }: S
             onLayout={handleSegmentLayout(index as 0 | 1)}
             onPress={() => handlePress(index as 0 | 1)}
           >
-            <Text style={[styles.label, compact && styles.labelCompact, { color: isActive ? activeColor : inactiveColor }]}>
-              {label}
-            </Text>
+            {/* Keyed on active status so it remounts (and replays its
+                `from`) the moment this segment BECOMES the selected one —
+                a quick overshoot-and-settle pop layered on top of the
+                thumb's own slide, not a replacement for it. Losing active
+                status also remounts, but from===animate===1 there is a
+                no-op, so only the "becoming active" direction is visible. */}
+            <MotiView
+              key={isActive ? `${label}-active` : `${label}-inactive`}
+              from={{ scale: isActive ? 0.7 : 1 }}
+              animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 12 }}
+            >
+              <Text style={[styles.label, compact && styles.labelCompact, { color: isActive ? activeColor : inactiveColor }]}>
+                {label}
+              </Text>
+            </MotiView>
           </Pressable>
         );
       })}

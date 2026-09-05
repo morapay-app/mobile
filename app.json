@@ -14,15 +14,18 @@
     "android": {
       "package": "io.morapay.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#023436",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "Morapay",
+      "shortName": "Morapay",
+      "lang": "en",
+      "backgroundColor": "#023436"
     },
     "plugins": [
       "expo-font",

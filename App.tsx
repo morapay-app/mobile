@@ -2,6 +2,7 @@ import { useCallback, useEffect, type ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { Platform, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 
@@ -122,17 +123,24 @@ export default function App() {
   }, [fontError]);
 
   return (
-    <DynamicRoot>
-      <ErrorBoundary>
-        <SafeAreaProvider>
-          {/* Mounted unconditionally (not just once fonts are ready) so its
-              own AsyncStorage read starts immediately, in parallel with
-              font loading, rather than only after fonts finish. */}
-          <TransactionStoreProvider>
-            <HydratedApp fontsReady={fontsReady} />
-          </TransactionStoreProvider>
-        </SafeAreaProvider>
-      </ErrorBoundary>
-    </DynamicRoot>
+    // Required by react-native-gesture-handler v2+ — needs to wrap
+    // everything that might contain a gesture-handler-based component (a
+    // swipe-to-confirm bar, a draggable bottom sheet, ...) or touches on
+    // Android silently fail to register at all. Outermost, above
+    // DynamicRoot, so nothing rendered anywhere in the tree is excluded.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <DynamicRoot>
+        <ErrorBoundary>
+          <SafeAreaProvider>
+            {/* Mounted unconditionally (not just once fonts are ready) so its
+                own AsyncStorage read starts immediately, in parallel with
+                font loading, rather than only after fonts finish. */}
+            <TransactionStoreProvider>
+              <HydratedApp fontsReady={fontsReady} />
+            </TransactionStoreProvider>
+          </SafeAreaProvider>
+        </ErrorBoundary>
+      </DynamicRoot>
+    </GestureHandlerRootView>
   );
 }

@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { MotiPressable } from 'moti/interactions';
 
 import { swapColors, swapFonts, swapRadii } from '../theme';
 
@@ -16,7 +17,7 @@ export function PercentPills({ selected, onSelect }: PercentPillsProps) {
       {OPTIONS.map((label, index) => {
         const isActive = index === selected;
         return (
-          <Pressable
+          <MotiPressable
             key={label}
             accessibilityRole="button"
             style={[
@@ -24,6 +25,13 @@ export function PercentPills({ selected, onSelect }: PercentPillsProps) {
               { backgroundColor: isActive ? swapColors.pillActive : swapColors.pillInactive },
             ]}
             onPress={() => onSelect(index)}
+            // Same tactile press-squash + selected-pop as QuickAmountPills —
+            // see that component's own doc for why.
+            animate={({ pressed }: { pressed: boolean }) => {
+              'worklet';
+              return { scale: pressed ? 0.94 : isActive ? 1.06 : 1 };
+            }}
+            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
           >
             <Text
               style={[
@@ -33,7 +41,7 @@ export function PercentPills({ selected, onSelect }: PercentPillsProps) {
             >
               {label}
             </Text>
-          </Pressable>
+          </MotiPressable>
         );
       })}
     </View>

@@ -24,7 +24,40 @@
          (translucent) instead of forcing a fixed system color band. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Morapay" />
     <title>%WEB_TITLE%</title>
+
+    <!-- Real site metadata — same copy/brand color the old frontend/apps/app
+         (the Next.js checkout this app replaced) used in its own layout.tsx,
+         so search engines/link previews describe what this app actually does
+         instead of falling back to Expo's own defaults (or nothing at all). -->
+    <meta name="description" content="Send, receive, buy crypto, and receive fiat across the world. Mobile money, cards, and stablecoins — all in one app." />
+    <link rel="canonical" href="https://app.morapay.io/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Morapay" />
+    <meta property="og:url" content="https://app.morapay.io/" />
+    <meta property="og:title" content="Morapay | Send, receive & exchange across the world" />
+    <meta property="og:description" content="Send, receive, buy crypto, and receive fiat across the world. Mobile money, cards, and stablecoins — all in one app." />
+    <meta property="og:image" content="https://app.morapay.io/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:logo" content="https://app.morapay.io/icon-512.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@morapay" />
+    <meta name="twitter:creator" content="@morapay" />
+    <meta name="twitter:title" content="Morapay | Send, receive & exchange across the world" />
+    <meta name="twitter:description" content="Send, receive, buy crypto, and receive fiat across the world. Mobile money, cards, and stablecoins — all in one app." />
+    <meta name="twitter:image" content="https://app.morapay.io/og-image.png" />
+
+    <!-- Real Morapay "m" mark (see assets/icon.png's own source) — Expo's own
+         export pipeline generates /favicon.ico from that same file; these
+         cover the sizes/formats it doesn't (apple-touch-icon, PWA manifest
+         icons). -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
       /* These styles make the body full-height. The explicit background

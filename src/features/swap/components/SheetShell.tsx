@@ -1,5 +1,7 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, type ReactNode } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { swapColors, swapFonts, swapRadii } from '../theme';
@@ -9,6 +11,9 @@ const DISMISS_THRESHOLD = 120;
 // bottom edge" at any sheet height these small pickers reach — same value
 // NetworkSelectSheet uses.
 const OFFSCREEN_OFFSET = 400;
+// Tuned to feel like the old Animated.spring(friction: 10, tension: 70) this
+// replaced — a little overshoot, settles quickly, never floaty.
+const SPRING_CONFIG = { damping: 18, stiffness: 220, mass: 0.9 } as const;
 
 export type SheetShellProps = {
   visible: boolean;
@@ -41,13 +46,20 @@ export type SheetShellProps = {
  * full-screen `Pressable` backdrop, sidesteps all three problems, and it's the
  * pattern the token and network pickers already use.
  *
+ * Built on Reanimated + Gesture Handler rather than the old core `Animated`/
+ * `PanResponder` this replaced — the drag-to-dismiss handle is exactly the
+ * "continuous touch interaction" that pair is for (tracks the finger on the
+ * UI thread with zero lag, even mid-quote-fetch or any other JS-thread work),
+ * where the plain `Animated` API required manually reading `gesture.dy` off
+ * the JS thread on every frame.
+ *
  * TokenSelectSheet and NetworkSelectSheet still carry their own copies of this
  * mechanic; they predate this shell and are deliberately left alone rather
  * than churned. New sheets should use this.
  */
 export function SheetShell({ visible, onClose, title, subtitle, testID, centerHeader, children }: SheetShellProps) {
-  const translateY = useRef(new Animated.Value(OFFSCREEN_OFFSET)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const translateY = useSharedValue(OFFSCREEN_OFFSET);
+  const backdropOpacity = useSharedValue(0);
   // The home-indicator inset — 0 on any device/browser without one, or
   // without `viewport-fit=cover` in public/index.html to unlock it. Added
   // on top of the sheet's own bottom padding, not instead of it, so content
@@ -65,42 +77,50 @@ export function SheetShell({ visible, onClose, title, subtitle, testID, centerHe
 
   useEffect(() => {
     if (visible) {
-      translateY.setValue(OFFSCREEN_OFFSET);
-      Animated.parallel([
-        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, friction: 10, tension: 70 }),
-        Animated.timing(backdropOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
+      translateY.value = OFFSCREEN_OFFSET;
+      translateY.value = withSpring(0, SPRING_CONFIG);
+      backdropOpacity.value = withTiming(1, { duration: 200 });
     }
   }, [visible, translateY, backdropOpacity]);
 
   const close = () => {
-    Animated.parallel([
-      Animated.timing(translateY, { toValue: OFFSCREEN_OFFSET, duration: 220, useNativeDriver: true }),
-      Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
-    ]).start(() => onClose());
+    'worklet';
+    translateY.value = withTiming(OFFSCREEN_OFFSET, { duration: 220 });
+    backdropOpacity.value = withTiming(0, { duration: 220 }, (finished) => {
+      if (finished) runOnJS(onClose)();
+    });
   };
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) translateY.setValue(gesture.dy);
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > DISMISS_THRESHOLD) {
-          close();
-        } else {
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, friction: 10, tension: 70 }).start();
-        }
-      },
-    }),
-  ).current;
+  // Only claims the gesture once the drag is genuinely vertical (and past a
+  // few px of slop) — matches the old PanResponder's own
+  // `gesture.dy > 4 && abs(dy) > abs(dx)` check, so a mostly-horizontal
+  // touch on the handle doesn't get swallowed by this.
+  const pan = Gesture.Pan()
+    .activeOffsetY(10)
+    .failOffsetX([-15, 15])
+    .onChange((event) => {
+      if (event.translationY > 0) translateY.value = event.translationY;
+    })
+    .onFinalize((event) => {
+      if (event.translationY > DISMISS_THRESHOLD) {
+        close();
+      } else {
+        translateY.value = withSpring(0, SPRING_CONFIG);
+      }
+    });
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
+  }));
 
   if (!visible) return null;
 
   return (
     <>
-      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+      <Animated.View style={[styles.backdrop, backdropStyle]}>
         <Pressable
           testID={testID ? `${testID}-backdrop` : undefined}
           style={StyleSheet.absoluteFill}
@@ -112,11 +132,13 @@ export function SheetShell({ visible, onClose, title, subtitle, testID, centerHe
 
       <Animated.View
         testID={testID}
-        style={[styles.sheet, { paddingBottom: 24 + insets.bottom }, { transform: [{ translateY }] }]}
+        style={[styles.sheet, { paddingBottom: 24 + insets.bottom }, sheetStyle]}
       >
-        <View {...panResponder.panHandlers} style={styles.handleArea}>
-          <View style={styles.handle} />
-        </View>
+        <GestureDetector gesture={pan}>
+          <View style={styles.handleArea}>
+            <View style={styles.handle} />
+          </View>
+        </GestureDetector>
 
         <View style={[styles.header, centerHeader && styles.headerCentered]}>
           <Text style={[styles.title, centerHeader && styles.textCentered]}>{title}</Text>

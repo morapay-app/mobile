@@ -1,4 +1,5 @@
-import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text } from 'react-native';
+import { MotiPressable } from 'moti/interactions';
 
 import { swapColors, swapFonts, swapRadii } from '../theme';
 
@@ -52,17 +53,28 @@ export function QuickAmountPills({ amounts, selected, onSelect, currency }: Quic
       {amounts.map((amount, index) => {
         const isActive = index === selected;
         return (
-          <Pressable
+          <MotiPressable
             key={amount}
             testID={`quick-amount-${amount}`}
             accessibilityRole="button"
             style={[styles.pill, { backgroundColor: isActive ? swapColors.pillActive : swapColors.pillInactive }]}
             onPress={() => onSelect(index)}
+            // Tactile spring pop: a quick press-down squash, and a small
+            // overshoot-then-settle bounce when this pill becomes the
+            // selected one — the "physics, not a fixed duration" feel from
+            // this app's own animation conventions (see the CLAUDE.md-level
+            // note on Moti + Reanimated), instead of the flat instant
+            // color-swap this used to be.
+            animate={({ pressed }: { pressed: boolean }) => {
+              'worklet';
+              return { scale: pressed ? 0.94 : isActive ? 1.06 : 1 };
+            }}
+            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
           >
             <Text style={[styles.label, { color: isActive ? swapColors.textOnDark : swapColors.pillInactiveText }]}>
               {currency ? `${formatCompactAmount(amount)} ${currency}` : `$${formatCompactAmount(amount)}`}
             </Text>
-          </Pressable>
+          </MotiPressable>
         );
       })}
     </ScrollView>

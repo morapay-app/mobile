@@ -3,6 +3,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { AlertTriangle, PartyPopper, SearchX } from 'lucide-react-native';
 
 import { swapColors, swapFonts, swapRadii } from '../swap/theme';
 import { PrimaryButton } from '../swap/components/PrimaryButton';
@@ -11,6 +12,19 @@ import { useWallet } from '../../dynamic/useWallet';
 import { useWalletConnectActions } from '../../dynamic/useWalletConnectActions';
 import type { RootStackParamList } from '../../navigation/types';
 import { useClaimRedeem } from './useClaimRedeem';
+import { CodeBoxInput } from './components/CodeBoxInput';
+import { StepIllustration } from './components/StepIllustration';
+import { StepArtwork } from './components/StepArtwork';
+import { claimMoneySvg, codeSvg, otpSvg, payoutSvg } from './illustrations';
+
+/** Both codes this screen asks for are a fixed length — see
+ * `generateClaimOtp`/`generateClaimCode` in core's claim-code.ts, the
+ * actual source of both (6-digit numeric OTP, 6-character alphanumeric
+ * claim code). Not a guess: the mismatch this replaces (a free-text OTP
+ * field with a "1234" placeholder and a `< 4`-characters check) was a real
+ * bug against that real length. */
+const OTP_LENGTH = 6;
+const CLAIM_CODE_LENGTH = 6;
 
 type ClaimScreenRouteProp = RouteProp<RootStackParamList, 'Claim'>;
 type ClaimScreenNavigation = NativeStackNavigationProp<RootStackParamList, 'Claim'>;
@@ -58,6 +72,7 @@ export function ClaimScreen() {
     return (
       <SafeAreaView style={styles.hero}>
         <View style={styles.card}>
+          <StepIllustration icon={SearchX} />
           <Text style={styles.title}>Claim link not found</Text>
           <Text style={styles.body}>This claim link isn't valid or has already been redeemed.</Text>
           <PrimaryButton testID="claim-go-home" label="Open Morapay" onPress={goHome} />
@@ -70,6 +85,7 @@ export function ClaimScreen() {
     return (
       <SafeAreaView style={styles.hero}>
         <View style={styles.card}>
+          <StepIllustration icon={AlertTriangle} />
           <Text style={styles.title}>Something went wrong</Text>
           <Text testID="claim-error" style={styles.body}>
             {state.message}
@@ -84,6 +100,7 @@ export function ClaimScreen() {
     return (
       <SafeAreaView style={styles.hero}>
         <View style={[styles.card, styles.successCard]}>
+          <StepIllustration icon={PartyPopper} />
           <Text style={[styles.title, styles.successText]}>Claimed</Text>
           <Text testID="claim-success" style={[styles.body, styles.successText]}>
             {state.message}
@@ -98,6 +115,7 @@ export function ClaimScreen() {
     return (
       <SafeAreaView style={styles.hero}>
         <View style={styles.card}>
+          <StepArtwork xml={claimMoneySvg} aspectRatio={800 / 483.13} />
           <Text style={styles.title}>Claim your money</Text>
           <Text style={styles.body}>Sent to {state.link.recipient_hint}. Enter your full email or phone number to continue.</Text>
           <TextInput
@@ -131,16 +149,16 @@ export function ClaimScreen() {
     return (
       <SafeAreaView style={styles.hero}>
         <View style={styles.card}>
+          <StepArtwork xml={otpSvg} aspectRatio={800 / 626.599} />
           <Text style={styles.title}>Enter your code</Text>
           <Text style={styles.body}>We sent a one-time code to {state.recipient}.</Text>
-          <TextInput
+          <CodeBoxInput
             testID="claim-otp-input"
+            length={OTP_LENGTH}
             value={otpInput}
-            onChangeText={(text) => setOtpInput(text.replace(/\D/g, ''))}
-            placeholder="1234"
-            placeholderTextColor={swapColors.textMuted}
+            onChangeText={setOtpInput}
             keyboardType="number-pad"
-            style={styles.input}
+            autoFocus
           />
           {state.error && (
             <Text testID="claim-otp-error" style={styles.warning}>
@@ -151,7 +169,7 @@ export function ClaimScreen() {
             testID="claim-otp-continue"
             label="Continue"
             loading={state.busy}
-            disabled={otpInput.trim().length < 4}
+            disabled={otpInput.trim().length !== OTP_LENGTH}
             onPress={() => submitOtp(otpInput.trim())}
           />
         </View>
@@ -163,16 +181,16 @@ export function ClaimScreen() {
     return (
       <SafeAreaView style={styles.hero}>
         <View style={styles.card}>
+          <StepArtwork xml={codeSvg} aspectRatio={564.98435 / 512.2962} />
           <Text style={styles.title}>Enter the claim code</Text>
           <Text style={styles.body}>Ask whoever sent you this money for the 6-character claim code they received.</Text>
-          <TextInput
+          <CodeBoxInput
             testID="claim-code-input"
+            length={CLAIM_CODE_LENGTH}
             value={codeInput}
-            onChangeText={(text) => setCodeInput(text.toUpperCase().slice(0, 6))}
-            placeholder="ABC123"
-            placeholderTextColor={swapColors.textMuted}
-            autoCapitalize="characters"
-            style={styles.input}
+            onChangeText={setCodeInput}
+            uppercase
+            autoFocus
           />
           {state.error && (
             <Text testID="claim-code-error" style={styles.warning}>
@@ -183,7 +201,7 @@ export function ClaimScreen() {
             testID="claim-code-continue"
             label="Continue"
             loading={state.busy}
-            disabled={codeInput.trim().length !== 6}
+            disabled={codeInput.trim().length !== CLAIM_CODE_LENGTH}
             onPress={() => submitClaimCode(codeInput.trim())}
           />
         </View>
@@ -197,6 +215,7 @@ export function ClaimScreen() {
     return (
       <SafeAreaView style={styles.hero}>
         <View style={styles.card}>
+          <StepIllustration icon={AlertTriangle} />
           <Text style={styles.title}>Can't pay this out in-app yet</Text>
           <Text testID="claim-unsupported" style={styles.warning}>
             This claim can only be redeemed to a bank account or mobile money — that isn't supported in the app yet.
@@ -228,6 +247,7 @@ export function ClaimScreen() {
   return (
     <SafeAreaView style={styles.hero}>
       <View style={styles.card}>
+        <StepArtwork xml={payoutSvg} aspectRatio={545.56323 / 523.50056} />
         <Text style={styles.label}>You're claiming</Text>
         <Text style={styles.amount}>
           {claim.value} {claim.token}
@@ -315,9 +335,11 @@ const styles = StyleSheet.create({
     fontFamily: swapFonts.body,
     fontSize: 16,
     color: swapColors.textPrimary,
-    backgroundColor: swapColors.subcard,
-    borderRadius: swapRadii.subcard,
-    paddingHorizontal: 16,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    borderBottomWidth: 1.5,
+    borderBottomColor: swapColors.divider,
+    paddingHorizontal: 4,
     paddingVertical: 12,
     textAlign: 'center',
   },
