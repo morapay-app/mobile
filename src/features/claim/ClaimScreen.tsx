@@ -8,7 +8,7 @@ import { AlertTriangle, PartyPopper, SearchX } from 'lucide-react-native';
 import { swapColors, swapFonts, swapRadii } from '../swap/theme';
 import { noOutlineStyle } from '../swap/webNoOutline';
 import { PrimaryButton } from '../swap/components/PrimaryButton';
-import { SwapCardSkeleton } from '../swap/components/SwapCardSkeleton';
+import { ClaimScreenSkeleton } from './components/ClaimScreenSkeleton';
 import { useWallet } from '../../dynamic/useWallet';
 import { useWalletConnectActions } from '../../dynamic/useWalletConnectActions';
 import type { RootStackParamList } from '../../navigation/types';
@@ -64,7 +64,7 @@ export function ClaimScreen() {
   if (state.step === 'loading') {
     return (
       <SafeAreaView style={styles.hero}>
-        <SwapCardSkeleton />
+        <ClaimScreenSkeleton />
       </SafeAreaView>
     );
   }

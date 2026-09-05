@@ -157,6 +157,14 @@ beforeEach(() => {
 });
 
 describe('PayScreen', () => {
+  it('shows its own shaped skeleton while loading, not the Swap screen\'s', async () => {
+    mockGetPaymentRequestByLink.mockImplementation(() => new Promise(() => {})); // never resolves
+    await renderPayScreen();
+
+    expect(screen.getByTestId('pay-screen-skeleton')).toBeTruthy();
+    expect(screen.queryByTestId('swap-card-skeleton')).toBeNull();
+  });
+
   it('shows a not-found state for an invalid link', async () => {
     mockGetPaymentRequestByLink.mockRejectedValue(new PayRequestError('Not found', undefined, 404));
     await renderPayScreen();

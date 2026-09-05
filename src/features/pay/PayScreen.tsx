@@ -6,7 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { swapColors, swapFonts, swapRadii } from '../swap/theme';
 import { PrimaryButton } from '../swap/components/PrimaryButton';
-import { SwapCardSkeleton } from '../swap/components/SwapCardSkeleton';
+import { PayScreenSkeleton } from './components/PayScreenSkeleton';
 import { useWallet } from '../../dynamic/useWallet';
 import { useWalletConnectActions } from '../../dynamic/useWalletConnectActions';
 import { useTokenTransfer } from '../swap/useTokenTransfer';
@@ -106,7 +106,7 @@ export function PayScreen() {
   if (state.status === 'loading') {
     return (
       <SafeAreaView style={styles.hero}>
-        <SwapCardSkeleton />
+        <PayScreenSkeleton />
       </SafeAreaView>
     );
   }

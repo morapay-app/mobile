@@ -12,9 +12,46 @@ import { DynamicRoot } from './src/dynamic/DynamicRoot';
 import { ErrorBoundary } from './src/ErrorBoundary';
 import { swapColors } from './src/features/swap/theme';
 import { SwapCardSkeleton } from './src/features/swap/components/SwapCardSkeleton';
+import { PayScreenSkeleton } from './src/features/pay/components/PayScreenSkeleton';
+import { ClaimScreenSkeleton } from './src/features/claim/components/ClaimScreenSkeleton';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { linking } from './src/navigation/linking';
 import { TransactionStoreProvider, useTransactionStore } from './src/features/transactions/TransactionStoreContext';
+
+/**
+ * Picks the right skeleton for whatever screen a cold-start deep link will
+ * actually land on, for the brief window before fonts/hydration/React
+ * Navigation's own async initial-route resolution finish (see
+ * `HydratedApp`/`NavigationContainer`'s `fallback` below) — `SwapCardSkeleton`
+ * shaped like the Swap screen was showing even for a `/pay/...` or
+ * `/claim/...` link, which reads wrong the instant it flashes.
+ *
+ * Web-only best-effort: `window.location.pathname` is the one place the
+ * target route is known synchronously, before React Navigation itself has
+ * parsed anything — native has no equivalent (the real splash screen covers
+ * this window entirely there, per `HydratedApp`'s own doc, so nothing here
+ * is ever actually seen on native regardless).
+ */
+function initialRouteSkeleton(): ReactNode {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    const path = window.location.pathname;
+    if (path.startsWith('/pay/')) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 20 }}>
+          <PayScreenSkeleton />
+        </View>
+      );
+    }
+    if (path.startsWith('/claim/')) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 20 }}>
+          <ClaimScreenSkeleton />
+        </View>
+      );
+    }
+  }
+  return <SwapCardSkeleton />;
+}
 
 SplashScreen.preventAutoHideAsync();
 
@@ -94,16 +131,12 @@ function HydratedApp({ fontsReady }: { fontsReady: boolean }) {
     // blank flash of `swapColors.hero` until fonts + hydration resolve —
     // both are typically sub-100ms, so in practice this rarely paints at
     // all before the real branch below takes over.
-    return (
-      <AppRoot>
-        <SwapCardSkeleton />
-      </AppRoot>
-    );
+    return <AppRoot>{initialRouteSkeleton()}</AppRoot>;
   }
 
   return (
     <AppRoot onLayout={onLayoutRootView}>
-      <NavigationContainer linking={linking} fallback={<SwapCardSkeleton />}>
+      <NavigationContainer linking={linking} fallback={initialRouteSkeleton()}>
         <RootNavigator />
       </NavigationContainer>
       <StatusBar style="dark" />
