@@ -77,7 +77,7 @@ const SELECTOR_SYMBOLS_BY_CHAIN: Readonly<Record<string, readonly string[]>> = {
   '42161': ['ARB', 'GMX', 'MAGIC', 'ETH', 'USDC'],
   '10': ['OP', 'VELO', 'USDC'],
   '137': ['POL', 'MATIC', 'USDC'],
-  '56': ['BNB', 'CAKE', 'FLOKI', 'BABYDOGE', 'USDC', 'USDT'],
+  '56': ['BNB', 'CAKE', 'FLOKI', 'BABYDOGE', 'GRIOT', 'USDC', 'USDT'],
   '43114': ['AVAX', 'JOE', 'USDC'],
   'solana-mainnet-beta': [
     'SOL', 'JUP', 'RAY', 'JITO', 'PYTH', 'BONK', 'WIF', 'POPCAT', 'PNUT', 'PENGU', 'FARTCOIN', 'MEW', 'TRUMP', 'USDC', 'USDT',
