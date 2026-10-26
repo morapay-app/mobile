@@ -17,7 +17,7 @@ export type RampLimitsCurrency = 'ghs' | 'ngn';
  * ramp-limits.ts there), so there's still a sane minimum to check against
  * before the network round trip finishes. */
 export const RAMP_LIMIT_FALLBACKS: Record<RampLimitsCurrency, RampLimitsPayload> = {
-  ghs: { currency: 'ghs', buy: { minFiat: 50, maxFiat: 2800 }, sell: { minToken: 3, maxToken: 7000 } },
+  ghs: { currency: 'ghs', buy: { minFiat: 50, maxFiat: 2900 }, sell: { minToken: 3, maxToken: 7000 } },
   ngn: { currency: 'ngn', buy: { minFiat: 3000, maxFiat: 5_000_000 }, sell: { minToken: 3, maxToken: 7000 } },
 };
 
